@@ -1,0 +1,32 @@
+# P1 registered capability: developer-profile metadata only. This manifest
+# does not identify or connect to any business system or data source.
+capability:
+  id: platform-foundation
+  name: P1 Platform Foundation
+  owner: platform
+  version: 1.0.0
+  verification_status: verified_skeleton
+  profile: developer
+contracts:
+  api: 1.0.0
+  tool: 1.0.0
+  view: 1.0.0
+  connector: null
+tools:
+  - id: platform.status
+    action: read
+    executed: false
+views:
+  - id: platform_status
+    version: 1.0.0
+data_sources: []
+limitations:
+  - no_business_capability
+  - no_real_data
+  - no_model_provider
+  - no_write_operation
+evidence:
+  - packages/contracts/src/asklily_contracts/models.py
+  - packages/domain/src/asklily_domain/registry.py
+  - services/api/src/asklily_api/main.py
+  - apps/web/src/main.tsx
