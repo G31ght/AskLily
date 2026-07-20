@@ -3,7 +3,7 @@
 - GitHub Tasks: [#6](https://github.com/G31ght/AskLily/issues/6)、[#7](https://github.com/G31ght/AskLily/issues/7)、[#8](https://github.com/G31ght/AskLily/issues/8)
 - 阶段：P3 Zabbix 只读接入
 - 基线：`8de6a1c0ae1ad5584af5535909bcb6a70bd3eb3f`
-- 当前状态：mock 预备、证据规范化和 L4 预检已完成；L4 Live Read-only 验收阻塞
+- 当前状态：mock 预备、证据规范化和 L4 预检已完成并获项目负责人验收；L4 Live Read-only 验收延期
 
 ## 用户价值
 

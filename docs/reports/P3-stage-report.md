@@ -7,11 +7,11 @@
 - P2 基线：`8de6a1c0ae1ad5584af5535909bcb6a70bd3eb3f`
 - 实现候选：`f0f1782a64bd03a8bf688f58bd7bbb2d105c71df`
 - 集成分支：`feature/P3-zabbix-readonly`
-- 验收状态：**黄色 - P3-001 至 P3-003 mock 预备与独立复检通过；真实 L4 只读验收因未提供环境而阻塞**
+- 验收状态：**绿色 - 项目负责人验收 P3-001 至 P3-003 的 mock 交付；真实 L4 只读验收延期**
 
 ## 阶段结论
 
-本阶段已将未来 Zabbix 只读接入的安全边界、mock 数据规范化、L4 预检与脱敏证据形状固化。P2 的 Fixture 默认数据源没有改变，未建立真实连接、未读取真实数据、未执行写方法，也没有把 mock 结果表述为真实系统结论。
+项目负责人已验收本阶段的 mock 交付。未来 Zabbix 只读接入的安全边界、mock 数据规范化、L4 预检与脱敏证据形状均已固化。P2 的 Fixture 默认数据源没有改变，未建立真实连接、未读取真实数据、未执行写方法，也没有把 mock 结果表述为真实系统结论；真实 L4 将在环境可用后单独验收。
 
 ## 已完成
 
@@ -28,12 +28,12 @@
 | Python 静态 | 通过 | Ruff 与 Mypy（14 个源文件）均通过。 |
 | 独立复检 | 通过 | `tests/reports/p3-zabbix-readonly-preparation-acceptance.md`；未修改业务实现。 |
 | P2 默认链路 | 未变更 | P3 未改动 Fixture 默认数据源或 Web/API 用户界面。 |
-| 真实 Zabbix / L4 | 未执行（阻塞） | 当前未提供 endpoint、专用只读 Token、最小获批 Scope 与单次执行授权；按 ADR-0003 不得连接。 |
+| 真实 Zabbix / L4 | 延期（已接受） | 当前未提供 endpoint、专用只读 Token、最小获批 Scope 与单次执行授权；按 ADR-0003 不得连接，后续单独验收。 |
 | 写操作 | 未执行（符合范围） | allow-list 不包含写方法；`host.create` 被测试验证为失败关闭。 |
 
-## 风险与下一门禁
+## 延期风险与下一门禁
 
-- 目前不能确认真实 Zabbix 的版本、认证兼容性、item key、空值/时间语义、权限边界与数据延迟，因此不能将本阶段称为 L4 或生产绿色。
+- 目前不能确认真实 Zabbix 的版本、认证兼容性、item key、空值/时间语义、权限边界与数据延迟；此风险已随 L4 验收延期接受，不能将本阶段绿色外推为 L4 或生产绿色。
 - 公开仓库不得接收 endpoint、Token、真实资源名、item key 或原始指标；L4 只可使用本地忽略配置，并只输出脱敏质量摘要。
 - 取得环境后，先按 [P3 L4 运行手册](../runbooks/P3-zabbix-l4-readonly-runbook.md) 完成门禁；再由 Project Lead 与独立 Test Agent 进行一次最小范围、只读、无写入的真实验收。
 
