@@ -1,0 +1,66 @@
+name: asklily
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      ASKLILY_RUNTIME_PROFILE: standalone
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    networks:
+      - asklily_internal
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+    profiles: ["standalone"]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${ASKLILY_HOST_BIND:-127.0.0.1}:${ASKLILY_HOST_PORT:-8080}:8080"
+    networks:
+      - asklily_internal
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+    profiles: ["standalone"]
+
+networks:
+  asklily_internal:
+    internal: true
