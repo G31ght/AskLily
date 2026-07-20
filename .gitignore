@@ -1,0 +1,34 @@
+# Local operating-system and IDE state
+.DS_Store
+.idea/
+.vscode/
+
+# Local configuration and credentials. Keep the safe shape example trackable.
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials
+credentials.*
+
+# Python artefacts
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node and web artefacts
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local run and generated artefacts
+tmp/
+*.log
