@@ -28,6 +28,7 @@ py-modules = []
 pythonpath = [
   "packages/contracts/src",
   "packages/domain/src",
+  "connectors/zabbix/src",
   "services/api/src",
   "services/agent/src",
 ]
@@ -36,7 +37,7 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["packages", "services"]
+files = ["packages", "services", "connectors"]
 exclude = ["^tests/"]
 
 [tool.ruff]
