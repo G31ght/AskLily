@@ -40,6 +40,30 @@ export type ChatResult = {
   sources: string[];
   view_context: ViewContext;
   limitations: string[];
+  optic_health: OpticHealthQuery;
+};
+
+export type Health = "healthy" | "critical" | "warning" | "recovered" | "unknown";
+
+export type OpticHealthRecord = {
+  resource: { resource_id: string; display_name: string; site_id: string | null; resource_type: string };
+  latest_observation: {
+    observed_at: string;
+    source: string;
+    quality: string;
+    values: { rx_dbm: number | null; tx_dbm: number | null; temperature_c: number | null };
+  };
+  assessment: { health: Health; reason_codes: string[]; evaluated_at: string; rule_version: string };
+  event: { fingerprint: string; status: string } | null;
+};
+
+export type OpticHealthQuery = {
+  summary: Partial<Record<Health, number>>;
+  source: string;
+  observed_from: string;
+  observed_to: string;
+  rule_version: string;
+  records: OpticHealthRecord[];
 };
 
 export class ApiFailure extends Error {
@@ -79,11 +103,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const platformApi = {
   session: () => request<Session>("/v1/session"),
   capabilities: () => request<{ request_id: string; capabilities: Capability[] }>("/v1/capabilities"),
-  validatePlatformView: (scope: Scope) =>
+  validateOpticView: (scope: Scope, filters: Record<string, unknown>) =>
     request<{ request_id: string; view_context: ViewContext }>("/v1/views/context", {
       method: "POST",
-      body: JSON.stringify({ view_id: "platform_status", scope })
+      body: JSON.stringify({ view_id: "optic_health", scope, filters })
     }),
   chat: (question: string) =>
-    request<ChatResult>("/v1/chat", { method: "POST", body: JSON.stringify({ question }) })
+    request<ChatResult>("/v1/chat", { method: "POST", body: JSON.stringify({ question }) }),
+  opticHealth: (filters: { health?: Health; search?: string } = {}) => {
+    const parameters = new URLSearchParams();
+    if (filters.health) parameters.set("health", filters.health);
+    if (filters.search) parameters.set("search", filters.search);
+    const suffix = parameters.size ? `?${parameters.toString()}` : "";
+    return request<{ request_id: string; query: OpticHealthQuery }>(`/v1/optic-health${suffix}`);
+  }
 };
