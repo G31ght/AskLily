@@ -7,7 +7,7 @@
 ## 部署与验证
 
 1. 安装 Docker Engine / Docker Desktop；不要将 Docker socket 暴露给应用容器。
-2. 复制 `deploy/standalone/.env.example` 为本地忽略的 `deploy/standalone/.env`。当前仅允许 loopback host bind 与端口；不得在其中放入 Token、endpoint 或真实系统信息。
+2. 复制 `deploy/standalone/.env.example` 为本地忽略的 `deploy/standalone/.env`。host bind 固定为 loopback，仅允许调整端口；不得在其中放入 Token、endpoint 或真实系统信息。
 3. 执行 `docker compose --env-file deploy/standalone/.env --profile standalone up --build --wait`。
 4. 执行 `curl --fail http://127.0.0.1:8080/health`，应返回 `status=ok`、`profile=standalone` 与 `data=fixture_l0_l1`。
 5. 在本机浏览器访问 `http://127.0.0.1:8080`；API 不应有对宿主机的直接端口映射。

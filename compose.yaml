@@ -41,9 +41,10 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${ASKLILY_HOST_BIND:-127.0.0.1}:${ASKLILY_HOST_PORT:-8080}:8080"
+      - "127.0.0.1:${ASKLILY_HOST_PORT:-8080}:8080"
     networks:
       - asklily_internal
+      - asklily_edge
     read_only: true
     restart: unless-stopped
     security_opt:
@@ -64,3 +65,4 @@ services:
 networks:
   asklily_internal:
     internal: true
+  asklily_edge: {}

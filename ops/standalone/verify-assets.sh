@@ -9,10 +9,14 @@ for required in compose.yaml Dockerfile.api Dockerfile.web deploy/standalone/ngi
 done
 
 grep -Fq 'ASKLILY_RUNTIME_PROFILE: standalone' compose.yaml
-grep -Fq '127.0.0.1}:${ASKLILY_HOST_PORT:-8080}:8080' compose.yaml
+grep -Fq '127.0.0.1:${ASKLILY_HOST_PORT:-8080}:8080' compose.yaml
 grep -Fq 'no-new-privileges:true' compose.yaml
 grep -Fq 'cap_drop:' compose.yaml
 grep -Fq 'proxy_pass http://api:8000' deploy/standalone/nginx.conf
+if grep -Fq 'ASKLILY_HOST_BIND' compose.yaml deploy/standalone/.env.example ops/standalone/upgrade.sh; then
+  echo "standalone host bind must be fixed to loopback" >&2
+  exit 1
+fi
 
 if git ls-files | grep -Eq '(^|/)(\.env|secrets/|.*\.(pem|key|p12|pfx))$'; then
   echo "tracked secret-shaped file found" >&2
