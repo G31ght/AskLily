@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asklily-platform"
+version = "0.1.0"
+description = "AskLily P1 platform skeleton"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "pydantic>=2.9,<3",
+  "uvicorn>=0.30,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.13,<2",
+  "httpx2>=0.0.1",
+  "pytest>=8.3,<9",
+  "ruff>=0.8,<1",
+]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "packages/contracts/src",
+  "packages/domain/src",
+  "services/api/src",
+  "services/agent/src",
+]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["packages", "services"]
+exclude = ["^tests/"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
