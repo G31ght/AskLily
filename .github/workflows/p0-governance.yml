@@ -1,0 +1,24 @@
+name: P0 governance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  l0-governance:
+    name: L0 governance check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Run offline P0 governance gate
+        run: bash infra/ci/check-p0-governance.sh
+
+# P0 deliberately runs only this L0 repository-governance gate.  Python and
+# TypeScript lint/type/test steps begin in P1 after source code and locked
+# dependencies are introduced.
