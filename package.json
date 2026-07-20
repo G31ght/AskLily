@@ -1,0 +1,14 @@
+{
+  "name": "asklily-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "typecheck": "pnpm --filter @asklily/web typecheck",
+    "test:web": "pnpm --filter @asklily/web test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}
