@@ -85,6 +85,19 @@ class Observation:
 
 
 @dataclass(frozen=True)
+class Event:
+    """A deduplicated domain event; it remains separate from its observations."""
+
+    event_id: str
+    fingerprint: str
+    resource_ids: tuple[str, ...]
+    severity: str
+    status: str
+    first_seen_at: datetime
+    last_seen_at: datetime
+
+
+@dataclass(frozen=True)
 class HealthAssessment:
     """A user-facing conclusion produced by a versioned domain rule. Owner: Domain."""
 
