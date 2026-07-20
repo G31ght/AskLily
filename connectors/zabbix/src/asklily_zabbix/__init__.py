@@ -15,12 +15,20 @@ from .normalizer import (
     normalize_optic_readonly_results,
 )
 from .quality import OpticFieldMapping, ZabbixMappingQualityReport, assess_optic_mapping
+from .readiness import (
+    L4PreflightResult,
+    L4QualitySummary,
+    assess_l4_preflight,
+    summarize_mapping_quality,
+)
 
 __all__ = [
     "ALLOWED_READ_METHODS",
     "ConnectorConfigurationError",
     "ConnectorPolicyError",
     "JsonRpcTransport",
+    "L4PreflightResult",
+    "L4QualitySummary",
     "OpticFieldMapping",
     "ZabbixMappingQualityReport",
     "ZabbixReadOnlyClient",
@@ -29,5 +37,7 @@ __all__ = [
     "ZabbixNormalizationResult",
     "ZabbixOpticScopeBinding",
     "assess_optic_mapping",
+    "assess_l4_preflight",
     "normalize_optic_readonly_results",
+    "summarize_mapping_quality",
 ]

@@ -10,8 +10,10 @@ from asklily_zabbix import (
     ZabbixOpticScopeBinding,
     ZabbixReadOnlyClient,
     ZabbixReadOnlyConfig,
+    assess_l4_preflight,
     assess_optic_mapping,
     normalize_optic_readonly_results,
+    summarize_mapping_quality,
 )
 
 
@@ -127,3 +129,40 @@ def test_normalization_does_not_fabricate_missing_or_invalid_values() -> None:
         "tx_dbm": None,
         "temperature_c": None,
     }
+
+
+def test_l4_preflight_stays_blocked_without_live_prerequisites_or_network_io() -> None:
+    preflight = assess_l4_preflight(
+        adr_accepted=True,
+        local_configuration_present=False,
+        approved_scope_declared=False,
+        live_execution_authorized=False,
+    )
+    assert not preflight.can_start_live_readonly_run
+    assert preflight.status == "blocked"
+    assert preflight.blockers == (
+        "local_readonly_configuration_missing",
+        "approved_scope_missing",
+        "live_execution_not_authorized",
+    )
+    assert preflight.allowed_methods == ("history.get", "host.get", "item.get")
+
+
+def test_l4_quality_summary_removes_local_identifiers_item_keys_and_raw_values() -> None:
+    mapping = OpticFieldMapping("optic.rx.dbm", "optic.tx.dbm", "optic.temperature.c")
+    report = assess_optic_mapping(
+        [{"hostid": "private-host-101", "name": "site-a-leaf-01"}],
+        [
+            {"itemid": "secret-item-1", "hostid": "private-host-101", "key_": "optic.rx.dbm"},
+            {"itemid": "secret-item-2", "hostid": "private-host-101", "key_": "optic.rx.dbm"},
+        ],
+        mapping,
+    )
+    summary = summarize_mapping_quality("l4-20260720-001", report)
+    assert summary.inspected_resource_count == 1
+    assert summary.complete_resource_count == 0
+    assert summary.missing_mapping_resource_count == 1
+    assert summary.duplicate_mapping_resource_count == 1
+    rendered = repr(summary)
+    for sensitive_value in ("private-host-101", "site-a-leaf-01", "secret-item-1", "optic.rx.dbm"):
+        assert sensitive_value not in rendered

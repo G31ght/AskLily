@@ -1,9 +1,9 @@
-# P3-001 Zabbix 只读 Connector 预备与 L4 验收门禁
+# P3 Zabbix 只读 Connector 预备与 L4 验收门禁
 
-- GitHub Task: [#6](https://github.com/G31ght/AskLily/issues/6)
+- GitHub Tasks: [#6](https://github.com/G31ght/AskLily/issues/6)、[#7](https://github.com/G31ght/AskLily/issues/7)、[#8](https://github.com/G31ght/AskLily/issues/8)
 - 阶段：P3 Zabbix 只读接入
 - 基线：`8de6a1c0ae1ad5584af5535909bcb6a70bd3eb3f`
-- 当前状态：Connector 预备实现；L4 Live Read-only 验收阻塞
+- 当前状态：mock 预备、证据规范化和 L4 预检已完成；L4 Live Read-only 验收阻塞
 
 ## 用户价值
 
@@ -13,14 +13,16 @@
 
 - Zabbix JSON-RPC 的最小只读客户端，固定允许 `host.get`、`item.get`、`history.get`。
 - 本地环境变量读取、HTTPS JSON-RPC endpoint 校验、缺失配置失败关闭。
-- 显式光模块 item key 映射、主机级缺失/重复/不可用项质量报告，以及纯 mock transport 测试。
-- L4 环境准备清单和数据处理 ADR 提案。
+- 显式光模块 item key 映射，将 mock Zabbix Host/Item/History 规范化为既有 P2 Resource/Observation 输入，并保留来源、时间和质量。
+- 主机级缺失/重复/不可用项本地质量诊断，以及不含资源标识和原始指标的 L4 报告摘要。
+- 无 I/O 的 L4 预检：ADR、本地配置、获批 Scope 与本次执行授权缺一不可；运行手册仅定义后续获授权的只读验收。
 
 ## 非目标
 
 - 本轮不连接、扫描、探测或验证真实 Zabbix；不提交真实 URL、Token、主机名、item key、指标或质量明细。
 - 不执行任何写方法、自动修复、配置下发、工单、持久化或生产部署。
 - 不将 P2 Fixture 或 mock 验证称为 L4 或 Production 验证。
+- P3-003 运行手册与预检结果不构成真实环境验证或 L4 通过。
 
 ## 依赖
 
