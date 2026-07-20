@@ -1,0 +1,18 @@
+# Template only; this is not a registered capability or data-source connection.
+capability:
+  id: CAP-XXX
+  name: ""
+  owner: ""
+  version: 0.0.0
+  verification_status: planned
+  profile: demo
+contracts:
+  api: null
+  tool: null
+  view: null
+  connector: null
+tools: []
+views: []
+data_sources: []
+limitations: []
+evidence: []
