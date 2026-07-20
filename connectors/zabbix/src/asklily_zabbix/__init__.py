@@ -8,6 +8,12 @@ from .client import (
     ZabbixReadOnlyClient,
     ZabbixReadOnlyConfig,
 )
+from .normalizer import (
+    ZABBIX_READONLY_SOURCE,
+    ZabbixNormalizationResult,
+    ZabbixOpticScopeBinding,
+    normalize_optic_readonly_results,
+)
 from .quality import OpticFieldMapping, ZabbixMappingQualityReport, assess_optic_mapping
 
 __all__ = [
@@ -19,5 +25,9 @@ __all__ = [
     "ZabbixMappingQualityReport",
     "ZabbixReadOnlyClient",
     "ZabbixReadOnlyConfig",
+    "ZABBIX_READONLY_SOURCE",
+    "ZabbixNormalizationResult",
+    "ZabbixOpticScopeBinding",
     "assess_optic_mapping",
+    "normalize_optic_readonly_results",
 ]

@@ -7,9 +7,11 @@ from asklily_zabbix import (
     ConnectorConfigurationError,
     ConnectorPolicyError,
     OpticFieldMapping,
+    ZabbixOpticScopeBinding,
     ZabbixReadOnlyClient,
     ZabbixReadOnlyConfig,
     assess_optic_mapping,
+    normalize_optic_readonly_results,
 )
 
 
@@ -84,3 +86,44 @@ def test_mapping_quality_reports_missing_duplicate_and_unusable_without_raw_valu
     assert report.unusable_items == ("6",)
     assert report.quality == "needs_mapping_review"
     assert "private-host" not in repr(report)
+
+
+def test_normalization_preserves_fact_quality_time_and_explicit_scope_binding() -> None:
+    mapping = OpticFieldMapping("optic.rx.dbm", "optic.tx.dbm", "optic.temperature.c")
+    result = normalize_optic_readonly_results(
+        [{"hostid": "101", "name": "mock-leaf-a01"}],
+        [
+            {"itemid": "1", "hostid": "101", "key_": "optic.rx.dbm"},
+            {"itemid": "2", "hostid": "101", "key_": "optic.tx.dbm"},
+            {"itemid": "3", "hostid": "101", "key_": "optic.temperature.c"},
+        ],
+        [
+            {"itemid": "1", "clock": "1720000000", "value": "-10.2"},
+            {"itemid": "2", "clock": "1720000001", "value": "-2.1"},
+            {"itemid": "3", "clock": "1720000002", "value": "45.0"},
+        ],
+        mapping,
+        ZabbixOpticScopeBinding("demo-project", "site-a"),
+    )
+    assert result.resources[0].project_id == "demo-project"
+    assert result.resources[0].site_id == "site-a"
+    assert result.observations[0].source == "zabbix://live-readonly"
+    assert result.observations[0].quality == "complete"
+    assert result.observations[0].values == {"rx_dbm": -10.2, "tx_dbm": -2.1, "temperature_c": 45.0}
+
+
+def test_normalization_does_not_fabricate_missing_or_invalid_values() -> None:
+    mapping = OpticFieldMapping("optic.rx.dbm", "optic.tx.dbm", "optic.temperature.c")
+    result = normalize_optic_readonly_results(
+        [{"hostid": "101"}],
+        [{"itemid": "1", "hostid": "101", "key_": "optic.rx.dbm"}],
+        [{"itemid": "1", "clock": "1720000000", "value": "not-a-number"}],
+        mapping,
+        ZabbixOpticScopeBinding("demo-project", "site-a"),
+    )
+    assert result.observations[0].quality == "invalid"
+    assert result.observations[0].values == {
+        "rx_dbm": None,
+        "tx_dbm": None,
+        "temperature_c": None,
+    }
