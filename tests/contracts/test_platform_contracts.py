@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,7 +15,6 @@ sys.path[:0] = [
 
 from asklily_contracts import (  # noqa: E402
     AuditEvent,
-    CapabilityManifest,
     ContractViolation,
     Scope,
     ToolContract,
@@ -56,7 +55,7 @@ class PlatformContractTests(unittest.TestCase):
     def test_audit_event_links_request_and_query(self) -> None:
         event = AuditEvent(
             event_id="audit-1",
-            occurred_at=datetime.now(timezone.utc),
+            occurred_at=datetime.now(UTC),
             actor_id="developer",
             action="tool.authorize",
             outcome="allowed",

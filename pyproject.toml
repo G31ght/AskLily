@@ -16,9 +16,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "mypy>=1.13,<2",
+  "httpx2>=0.0.1",
   "pytest>=8.3,<9",
   "ruff>=0.8,<1",
 ]
+
+[tool.setuptools]
+py-modules = []
 
 [tool.pytest.ini_options]
 pythonpath = [
@@ -41,3 +45,4 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+ignore = ["E501"]

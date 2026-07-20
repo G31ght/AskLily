@@ -6,9 +6,10 @@ business rule, real data source, or external write operation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, FrozenSet, Mapping, Optional, Tuple
+from typing import Any
 
 API_CONTRACT_VERSION = "1.0.0"
 TOOL_CONTRACT_VERSION = "1.0.0"
@@ -25,12 +26,12 @@ class Scope:
     """Server-issued, allow-list data boundary. Owner: Identity / API."""
 
     project_id: str
-    site_ids: FrozenSet[str] = field(default_factory=frozenset)
-    cluster_ids: FrozenSet[str] = field(default_factory=frozenset)
-    resource_types: FrozenSet[str] = field(default_factory=frozenset)
-    actions: FrozenSet[str] = field(default_factory=lambda: frozenset({"read"}))
+    site_ids: frozenset[str] = field(default_factory=frozenset)
+    cluster_ids: frozenset[str] = field(default_factory=frozenset)
+    resource_types: frozenset[str] = field(default_factory=frozenset)
+    actions: frozenset[str] = field(default_factory=lambda: frozenset({"read"}))
 
-    def narrowed_to(self, requested: "Scope") -> "Scope":
+    def narrowed_to(self, requested: Scope) -> Scope:
         """Return a safe intersection; callers can never widen a Scope."""
         if requested.project_id != self.project_id:
             raise ContractViolation("scope_project_mismatch")
@@ -48,8 +49,8 @@ class Scope:
 
 
 def _narrow_dimension(
-    granted: FrozenSet[str], requested: FrozenSet[str], dimension: str
-) -> FrozenSet[str]:
+    granted: frozenset[str], requested: frozenset[str], dimension: str
+) -> frozenset[str]:
     """An empty granted dimension means unrestricted only for that dimension."""
     if not requested:
         return granted
@@ -66,9 +67,9 @@ class Resource:
     project_id: str
     resource_type: str
     display_name: str
-    site_id: Optional[str] = None
-    cluster_id: Optional[str] = None
-    source_ref: Optional[str] = None
+    site_id: str | None = None
+    cluster_id: str | None = None
+    source_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,9 +90,9 @@ class HealthAssessment:
 
     resource_id: str
     health: str
-    reason_codes: Tuple[str, ...]
+    reason_codes: tuple[str, ...]
     evaluated_at: datetime
-    evidence_refs: Tuple[str, ...]
+    evidence_refs: tuple[str, ...]
     rule_version: str
 
 
@@ -111,9 +112,9 @@ class PlatformResponse:
 
     contract_version: str
     request_id: str
-    data: Optional[Mapping[str, Any]] = None
-    error: Optional[ApiError] = None
-    query_id: Optional[str] = None
+    data: Mapping[str, Any] | None = None
+    error: ApiError | None = None
+    query_id: str | None = None
 
     def __post_init__(self) -> None:
         if (self.data is None) == (self.error is None):
@@ -141,8 +142,8 @@ class ViewContext:
     version: str
     scope: Scope
     filters: Mapping[str, Any]
-    focus_resource_id: Optional[str] = None
-    query_id: Optional[str] = None
+    focus_resource_id: str | None = None
+    query_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -154,9 +155,9 @@ class CapabilityManifest:
     owner: str
     status: str
     profile: str
-    tool_ids: Tuple[str, ...]
-    view_ids: Tuple[str, ...]
-    limitations: Tuple[str, ...]
+    tool_ids: tuple[str, ...]
+    view_ids: tuple[str, ...]
+    limitations: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -170,6 +171,6 @@ class AuditEvent:
     outcome: str
     request_id: str
     scope_project_id: str
-    query_id: Optional[str] = None
-    tool_id: Optional[str] = None
-    reason_code: Optional[str] = None
+    query_id: str | None = None
+    tool_id: str | None = None
+    reason_code: str | None = None

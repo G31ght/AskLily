@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, Mapping
 
-from asklily_contracts import CapabilityManifest, ContractViolation, Scope, ToolContract, ViewContext
+from asklily_contracts import (
+    CapabilityManifest,
+    ContractViolation,
+    Scope,
+    ToolContract,
+    ViewContext,
+)
 
 
 @dataclass
 class PlatformRegistry:
     """In-memory registry for the P1 skeleton; it does not execute Tools."""
 
-    tools: Dict[str, ToolContract] = field(default_factory=dict)
+    tools: dict[str, ToolContract] = field(default_factory=dict)
     view_ids: set[str] = field(default_factory=set)
-    capabilities: Dict[str, CapabilityManifest] = field(default_factory=dict)
+    capabilities: dict[str, CapabilityManifest] = field(default_factory=dict)
 
     def register_tool(self, contract: ToolContract) -> None:
         if contract.tool_id in self.tools:
