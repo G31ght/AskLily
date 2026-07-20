@@ -1,0 +1,31 @@
+name: P4 standalone validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  standalone:
+    name: P4 standalone Compose smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate non-runtime standalone assets
+        run: bash ops/standalone/verify-assets.sh
+      - name: Validate Compose profile
+        run: docker compose --profile standalone config --quiet
+      - name: Build and start standalone profile
+        run: docker compose --profile standalone up --build --wait
+      - name: Verify proxied API health and Web entrypoint
+        run: |
+          curl --fail --silent --show-error --retry 5 http://127.0.0.1:8080/health | grep -F '"profile":"standalone"'
+          curl --fail --silent --show-error http://127.0.0.1:8080/ | grep -F '<title>'
+      - name: Stop standalone profile
+        if: always()
+        run: docker compose --profile standalone down --volumes --remove-orphans

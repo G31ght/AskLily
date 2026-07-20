@@ -1,0 +1,20 @@
+FROM python:3.11.11-slim-bookworm
+
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/packages/contracts/src:/app/packages/domain/src:/app/connectors/zabbix/src:/app/services/api/src:/app/services/agent/src
+
+COPY requirements-dev.lock pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements-dev.lock
+
+COPY packages ./packages
+COPY connectors ./connectors
+COPY services ./services
+RUN groupadd --gid 10001 asklily \
+    && useradd --uid 10001 --gid asklily --create-home --shell /usr/sbin/nologin asklily \
+    && chown -R asklily:asklily /app
+
+USER 10001:10001
+EXPOSE 8000
+CMD ["uvicorn", "asklily_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

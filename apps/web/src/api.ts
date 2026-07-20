@@ -10,7 +10,7 @@ export type Session = {
   request_id: string;
   identity: { role: string; display_name: string };
   scope: Scope;
-  profile: "developer";
+  profile: "developer" | "standalone";
 };
 
 export type Capability = {

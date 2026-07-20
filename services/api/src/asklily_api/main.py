@@ -25,6 +25,9 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import RequestResponseEndpoint
 
+from .runtime import runtime_profile
+
+RUNTIME_PROFILE = runtime_profile()
 app = FastAPI(title="AskLily P2 Optic Health API", version="0.2.0")
 
 OPTIC_TOOL_ID = "optic_health.query"
@@ -86,7 +89,7 @@ REGISTRY.register_capability(
         "1.0.0",
         "platform",
         "verified_skeleton",
-        "developer",
+        RUNTIME_PROFILE,
         ("platform.status",),
         ("platform_status",),
         ("no_business_capability", "no_real_data", "no_model_provider"),
@@ -100,7 +103,7 @@ REGISTRY.register_capability(
         "1.0.0",
         "optic-health",
         "demo_candidate",
-        "developer",
+        RUNTIME_PROFILE,
         (OPTIC_TOOL_ID,),
         (OPTIC_VIEW_ID,),
         ("fixture_l0_l1_only", "no_real_connector", "no_write_operation"),
@@ -206,7 +209,7 @@ def _run_optic_query(
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "profile": "developer", "data": "fixture_l0_l1", "rule_version": OPTIC_RULE_VERSION}
+    return {"status": "ok", "profile": RUNTIME_PROFILE, "data": "fixture_l0_l1", "rule_version": OPTIC_RULE_VERSION}
 
 
 @app.get("/v1/session")
@@ -218,7 +221,7 @@ def session(request: Request, x_asklily_role: str = Header(default="operator")) 
         "request_id": request_id,
         "identity": {"role": x_asklily_role, "display_name": display_name},
         "scope": _scope_dict(scope),
-        "profile": "developer",
+        "profile": RUNTIME_PROFILE,
     }
 
 

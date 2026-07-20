@@ -23,6 +23,7 @@ const HEALTH_LABELS: Record<Health, string> = {
 function App() {
   const [panel, setPanel] = useState<Panel>("chat");
   const [scope, setScope] = useState<Scope | null>(null);
+  const [runtimeProfile, setRuntimeProfile] = useState<"developer" | "standalone">("developer");
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [chat, setChat] = useState<ChatResult | null>(null);
   const [opticHealth, setOpticHealth] = useState<OpticHealthQuery | null>(null);
@@ -37,6 +38,7 @@ function App() {
     void Promise.all([platformApi.session(), platformApi.capabilities(), platformApi.opticHealth()])
       .then(([session, catalog, response]) => {
         setScope(session.scope);
+        setRuntimeProfile(session.profile);
         setCapabilities(catalog.capabilities);
         setOpticHealth(response.query);
       })
@@ -89,7 +91,7 @@ function App() {
     <main>
       <header>
         <div>
-          <p className="eyebrow">ASKLILY · DEVELOPER PROFILE · P2</p>
+          <p className="eyebrow">ASKLILY · {runtimeProfile.toUpperCase()} PROFILE · P2</p>
           <h1>光模块健康 Demo</h1>
         </div>
         <span className="badge">Fixture L0/L1 · 严格只读 · 非生产阈值</span>

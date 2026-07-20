@@ -1,4 +1,5 @@
 from asklily_api.main import AUDIT_EVENTS, app
+from asklily_api.runtime import runtime_profile
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -79,3 +80,14 @@ def test_optic_view_context_rejects_scope_expansion() -> None:
     )
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "scope_site_not_allowed"
+
+
+def test_runtime_profile_defaults_to_developer_and_rejects_unknown_values() -> None:
+    assert runtime_profile({}) == "developer"
+    assert runtime_profile({"ASKLILY_RUNTIME_PROFILE": "standalone"}) == "standalone"
+    try:
+        runtime_profile({"ASKLILY_RUNTIME_PROFILE": "production"})
+    except ValueError as exc:
+        assert str(exc) == "asklily_runtime_profile_invalid"
+    else:
+        raise AssertionError("unknown runtime profile must fail closed")
