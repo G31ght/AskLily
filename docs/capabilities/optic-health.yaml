@@ -1,0 +1,40 @@
+# CAP-OPTIC-HEALTH P2 Demo capability. No real data source or Connector exists.
+capability:
+  id: optic-health
+  name: Optic Health Demo
+  owner: optic-health
+  version: 1.0.0
+  verification_status: demo_candidate
+  profile: developer
+contracts:
+  api: 1.0.0
+  tool: 1.0.0
+  view: 1.0.0
+  connector: null
+tools:
+  - id: optic_health.query
+    action: read
+    executed: true
+    source: fixture://optic-health/l0-l1-v1
+views:
+  - id: optic_health
+    version: 1.0.0
+data_sources:
+  - level: L0
+    kind: fixed_fixture
+    source: fixture://optic-health/l0-l1-v1
+  - level: L1
+    kind: synthetic_scenarios
+    source: fixture://optic-health/l0-l1-v1
+limitations:
+  - fixture_l0_l1_only
+  - no_real_connector
+  - no_real_threshold_commitment
+  - no_write_operation
+evidence:
+  - docs/capabilities/CAP-OPTIC-HEALTH-brief.md
+  - packages/domain/src/asklily_domain/optic_health.py
+  - services/api/src/asklily_api/main.py
+  - apps/web/src/main.tsx
+  - tests/domain/test_optic_health.py
+  - tests/api/test_platform_api.py
