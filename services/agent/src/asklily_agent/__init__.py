@@ -1,5 +1,5 @@
-"""Read-only P1 agent orchestration boundary."""
+"""Read-only agent orchestration boundary."""
 
-from .orchestrator import P1Orchestrator
+from .orchestrator import OpticHealthOrchestrator, health_filter_for_question
 
-__all__ = ["P1Orchestrator"]
+__all__ = ["OpticHealthOrchestrator", "health_filter_for_question"]
