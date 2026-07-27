@@ -25,6 +25,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import RequestResponseEndpoint
 
+from .local_identity import IdentityError, LocalIdentity, LocalIdentityStore, default_database_path
 from .runtime import runtime_profile
 
 RUNTIME_PROFILE = runtime_profile()
@@ -63,6 +64,22 @@ class ViewContextInput(BaseModel):
 class ChatInput(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     requested_scope: ScopeInput | None = None
+    conversation_id: str | None = Field(default=None, max_length=100)
+
+
+class LocalRegistrationInput(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=12, max_length=128)
+    display_name: str | None = Field(default=None, max_length=100)
+
+
+class LocalLoginInput(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AccountDeletionInput(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
 
 
 DEVELOPMENT_IDENTITIES: dict[str, tuple[str, Scope]] = {
@@ -111,6 +128,8 @@ REGISTRY.register_capability(
 )
 AUDIT_EVENTS: list[AuditEvent] = []
 ORCHESTRATOR = OpticHealthOrchestrator()
+LOCAL_IDENTITIES = LocalIdentityStore(default_database_path())
+SESSION_COOKIE = "asklily_local_session"
 
 
 def _request_id(request: Request) -> str:
@@ -131,6 +150,31 @@ def _identity(role: str, request_id: str) -> tuple[str, Scope]:
     except KeyError as exc:
         _audit(role, "session.resolve", "denied", request_id, Scope("unknown"), reason="unknown_development_role")
         raise HTTPException(401, detail={"code": "unknown_development_role", "request_id": request_id}) from exc
+
+
+def _local_identity(request: Request, request_id: str) -> LocalIdentity | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    if token is None:
+        return None
+    try:
+        return LOCAL_IDENTITIES.resolve_session(token)
+    except IdentityError as exc:
+        raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
+
+
+def _request_identity(request: Request, role: str, request_id: str) -> tuple[str, Scope, LocalIdentity | None]:
+    local = _local_identity(request, request_id)
+    if local is not None:
+        return local.account_id, local.scope, local
+    actor, scope = _identity(role, request_id)
+    return actor, scope, None
+
+
+def _require_local_identity(request: Request, request_id: str) -> LocalIdentity:
+    identity = _local_identity(request, request_id)
+    if identity is None:
+        raise HTTPException(401, detail={"code": "local_session_required", "request_id": request_id})
+    return identity
 
 
 def _audit(
@@ -212,14 +256,66 @@ def health() -> dict[str, str]:
     return {"status": "ok", "profile": RUNTIME_PROFILE, "data": "fixture_l0_l1", "rule_version": OPTIC_RULE_VERSION}
 
 
+@app.post("/v1/auth/register", status_code=201)
+def register_local_account(payload: LocalRegistrationInput, request: Request, response: Response) -> dict[str, object]:
+    request_id = _request_id(request)
+    try:
+        identity = LOCAL_IDENTITIES.register(payload.username, payload.password, payload.display_name)
+        token = LOCAL_IDENTITIES.issue_session(identity.account_id)
+    except IdentityError as exc:
+        raise HTTPException(400, detail={"code": str(exc), "request_id": request_id}) from exc
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
+    _audit(identity.account_id, "local_account.register", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "identity": _local_identity_dict(identity)}
+
+
+@app.post("/v1/auth/login")
+def login_local_account(payload: LocalLoginInput, request: Request, response: Response) -> dict[str, object]:
+    request_id = _request_id(request)
+    try:
+        identity = LOCAL_IDENTITIES.authenticate(payload.username, payload.password)
+        token = LOCAL_IDENTITIES.issue_session(identity.account_id)
+    except IdentityError as exc:
+        raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
+    _audit(identity.account_id, "local_account.login", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "identity": _local_identity_dict(identity)}
+
+
+@app.post("/v1/auth/logout")
+def logout_local_account(request: Request, response: Response) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_local_identity(request, request_id)
+    token = request.cookies[SESSION_COOKIE]
+    LOCAL_IDENTITIES.revoke_session(token)
+    response.delete_cookie(SESSION_COOKIE)
+    _audit(identity.account_id, "local_account.logout", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "status": "logged_out"}
+
+
+@app.delete("/v1/auth/account")
+def delete_local_account(payload: AccountDeletionInput, request: Request, response: Response) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_local_identity(request, request_id)
+    try:
+        LOCAL_IDENTITIES.delete_account(identity, payload.password)
+    except IdentityError as exc:
+        raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
+    response.delete_cookie(SESSION_COOKIE)
+    _audit(identity.account_id, "local_account.delete", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "status": "account_deleted"}
+
+
 @app.get("/v1/session")
 def session(request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
     request_id = _request_id(request)
-    display_name, scope = _identity(x_asklily_role, request_id)
-    _audit(x_asklily_role, "session.read", "allowed", request_id, scope)
+    actor, scope, local = _request_identity(request, x_asklily_role, request_id)
+    display_name = local.display_name if local is not None else DEVELOPMENT_IDENTITIES[x_asklily_role][0]
+    role = local.role if local is not None else x_asklily_role
+    _audit(actor, "session.read", "allowed", request_id, scope)
     return {
         "request_id": request_id,
-        "identity": {"role": x_asklily_role, "display_name": display_name},
+        "identity": {"role": role, "display_name": display_name, "authenticated": local is not None},
         "scope": _scope_dict(scope),
         "profile": RUNTIME_PROFILE,
     }
@@ -306,22 +402,66 @@ def validate_view_context(
 @app.post("/v1/chat")
 def chat(payload: ChatInput, request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
     request_id = _request_id(request)
-    _, server_scope = _identity(x_asklily_role, request_id)
+    actor, server_scope, local = _request_identity(request, x_asklily_role, request_id)
     scope = _narrow(
         server_scope,
         payload.requested_scope.as_contract() if payload.requested_scope else None,
-        x_asklily_role,
+        actor,
         request_id,
         "chat.read",
     )
-    _audit(x_asklily_role, "chat.read", "allowed", request_id, scope)
+    _audit(actor, "chat.read", "allowed", request_id, scope)
     result = _run_optic_query(
         scope,
-        x_asklily_role,
+        actor,
         request_id,
         health_filter=health_filter_for_question(payload.question),
     )
-    return dict(ORCHESTRATOR.respond(payload.question, scope, request_id, result))
+    response = dict(ORCHESTRATOR.respond(payload.question, scope, request_id, result))
+    if local is not None:
+        try:
+            conversation_id = LOCAL_IDENTITIES.create_or_append_conversation(
+                local,
+                payload.conversation_id,
+                payload.question,
+                str(response["message"]),
+                result.source,
+                "fixture_l0_l1_only,no_real_connector,no_write_operation",
+            )
+        except IdentityError as exc:
+            raise HTTPException(404, detail={"code": str(exc), "request_id": request_id}) from exc
+        response["conversation_id"] = conversation_id
+    return response
+
+
+@app.get("/v1/conversations")
+def conversations(request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_local_identity(request, request_id)
+    return {"request_id": request_id, "conversations": LOCAL_IDENTITIES.list_conversations(identity)}
+
+
+@app.get("/v1/conversations/{conversation_id}")
+def conversation(conversation_id: str, request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_local_identity(request, request_id)
+    try:
+        value = LOCAL_IDENTITIES.read_conversation(identity, conversation_id)
+    except IdentityError as exc:
+        raise HTTPException(404, detail={"code": str(exc), "request_id": request_id}) from exc
+    return {"request_id": request_id, "conversation": value}
+
+
+@app.delete("/v1/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str, request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_local_identity(request, request_id)
+    try:
+        LOCAL_IDENTITIES.delete_conversation(identity, conversation_id)
+    except IdentityError as exc:
+        raise HTTPException(404, detail={"code": str(exc), "request_id": request_id}) from exc
+    _audit(identity.account_id, "conversation.delete", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "status": "conversation_deleted"}
 
 
 @app.get("/v1/audit")
@@ -343,6 +483,10 @@ def _scope_dict(scope: Scope) -> dict[str, object]:
         "resource_types": sorted(scope.resource_types),
         "actions": sorted(scope.actions),
     }
+
+
+def _local_identity_dict(identity: LocalIdentity) -> dict[str, object]:
+    return {"account_id": identity.account_id, "username": identity.username, "display_name": identity.display_name, "role": identity.role, "scope": _scope_dict(identity.scope)}
 
 
 def _view_dict(context: ViewContext) -> dict[str, object]:
