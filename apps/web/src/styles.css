@@ -30,3 +30,13 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .conversation:not(.idle) .meta { color: #d8dcff; }
 .conversation:not(.idle) .composer textarea { border-color: #ffffff60; box-shadow: 0 .6rem 2rem #09144444; }
 .shell:not(.work) .conversation { transition: none; }
+/* Keep Work Mode and manually collapsed Chat Mode visually identical. */
+.shell.rail-collapsed:not(.work) .history, .shell.rail-collapsed:not(.work) .history-icon, .shell.work .history, .shell.work .history-icon { display: none; }
+.shell.rail-collapsed:not(.work) .rail-title, .shell.work .rail-title { height: 0; margin: 0; overflow: hidden; opacity: 0; }
+.shell.work .rail-top { position: relative; justify-content: center; }
+.shell.work .brand { font-size: 0; transition: opacity .16s ease; }
+.shell.work .brand > span:first-child { font-size: 1.4rem; }
+.shell.work .rail-toggle { position: absolute; top: 50%; left: 50%; display: grid; opacity: 0; pointer-events: none; transform: translate(-50%, -50%) scale(.86); }
+.shell.work .rail:hover .brand { opacity: 0; pointer-events: none; }
+.shell.work .rail:hover .rail-toggle { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+.shell.work .rail-copy { display: none; }
