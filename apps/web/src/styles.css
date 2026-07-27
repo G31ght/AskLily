@@ -24,4 +24,8 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .shell.rail-collapsed:not(.work) .account .sign-out, .work .account .sign-out { width: 0; margin-left: 0; padding: 0; overflow: hidden; }
 .shell.work { grid-template-columns: 64px minmax(0, .75fr) minmax(0, 1.45fr); }
 .work .rail { padding-inline: .5rem; }
-.conversation:not(.idle) { background: linear-gradient(145deg, #e6e9ffdf, #dfe4ffcf 56%, #e9ebffdc); }
+.conversation:not(.idle) { background: radial-gradient(circle at 32% 35%, #6671d4 0%, #263b87 48%, #0d1c58 100%); color: #eef0ff; border-color: #ffffff3d; box-shadow: 0 1.35rem 4rem #26377955; }
+.conversation:not(.idle) .eyebrow { color: #d8dcff; }
+.conversation:not(.idle) .debug { background: #ffffff1f; color: #f0edff; }
+.conversation:not(.idle) .meta { color: #d8dcff; }
+.conversation:not(.idle) .composer textarea { border-color: #ffffff60; box-shadow: 0 .6rem 2rem #09144444; }
