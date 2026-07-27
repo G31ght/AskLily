@@ -209,7 +209,7 @@ function textTargets(width: number, height: number, question: string) {
   const source = document.createElement("canvas");
   source.width = Math.max(1, Math.floor(width)); source.height = Math.max(1, Math.floor(height));
   const context = source.getContext("2d")!;
-  const fontSize = Math.max(30, Math.min(width / Math.max(question.length * 1.05, 8), 72));
+  const fontSize = Math.max(28, Math.min(width / Math.max(question.length * 1.12, 8), 62));
   context.font = `700 ${fontSize}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle"; context.fillStyle = "#ffffff";
   context.fillText(question, width / 2, height * .5);
   return sampleTargets(context, source.width, source.height, 2);
