@@ -29,3 +29,4 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .conversation:not(.idle) .debug { background: #ffffff1f; color: #f0edff; }
 .conversation:not(.idle) .meta { color: #d8dcff; }
 .conversation:not(.idle) .composer textarea { border-color: #ffffff60; box-shadow: 0 .6rem 2rem #09144444; }
+.shell:not(.work) .conversation { transition: none; }
