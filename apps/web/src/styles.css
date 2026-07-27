@@ -24,3 +24,4 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .shell.rail-collapsed:not(.work) .account .sign-out, .work .account .sign-out { width: 0; margin-left: 0; padding: 0; overflow: hidden; }
 .shell.work { grid-template-columns: 64px minmax(0, .75fr) minmax(0, 1.45fr); }
 .work .rail { padding-inline: .5rem; }
+.conversation:not(.idle) { background: linear-gradient(145deg, #e6e9ffdf, #dfe4ffcf 56%, #e9ebffdc); }
