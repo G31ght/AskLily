@@ -78,7 +78,7 @@ function App() {
       {!chat && !savedMessages.length ? <Welcome stage={welcomeStage} onAsk={ask} /> : chat ? <article className="answer"><p className="bubble">{chat.question_acknowledged}</p><p>{chat.message}</p><p className="meta">来源：{chat.sources.join("、")} · 限制：{chat.limitations.join("、")}</p></article> : <SavedConversation messages={savedMessages} />}
       <form className="composer" onSubmit={submitChat}><textarea aria-label="向 AskLily 提问" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="向 AskLily 提问…"/><button type="submit">↑</button></form>
     </section>
-    {workMode && opticHealth && <section className="workbench" aria-label="Work Mode"><header><span>工作台 / Work Mode</span><span className="badge">严格只读 · Fixture</span></header><WorkspaceModules modules={chat?.presentation.modules ?? [{ module_id: "optic-health-overview", view_id: "optic_health" }]} query={opticHealth} /></section>}
+    {opticHealth && <section className="workbench" aria-label="Work Mode" aria-hidden={!workMode}><header><span>工作台 / Work Mode</span><span className="badge">严格只读 · Fixture</span></header><WorkspaceModules modules={chat?.presentation.modules ?? [{ module_id: "optic-health-overview", view_id: "optic_health" }]} query={opticHealth} /></section>}
   </main>;
 }
 
