@@ -35,6 +35,12 @@ OPTIC_TOOL_ID = "optic_health.query"
 OPTIC_VIEW_ID = "optic_health"
 ALLOWED_HEALTH = frozenset({"healthy", "critical", "warning", "recovered", "unknown"})
 
+# A future model Skill may select only from this server-owned presentation
+# registry.  It cannot supply arbitrary components, query parameters or data.
+PRESENTATION_MODULES: dict[str, dict[str, str]] = {
+    "optic-health-overview": {"module_id": "optic-health-overview", "view_id": OPTIC_VIEW_ID},
+}
+
 
 class ScopeInput(BaseModel):
     project_id: str
@@ -251,6 +257,16 @@ def _run_optic_query(
     return result
 
 
+def _default_presentation() -> dict[str, object]:
+    """Return the safe no-model default for the natural-language response.
+
+    P5A intentionally leaves this in Chat Mode.  A later trusted Skill adapter
+    may return ``mode=work`` and an ordered subset of PRESENTATION_MODULES only
+    after its tool calls have completed and the server has validated its result.
+    """
+    return {"mode": "chat", "modules": []}
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "profile": RUNTIME_PROFILE, "data": "fixture_l0_l1", "rule_version": OPTIC_RULE_VERSION}
@@ -418,6 +434,7 @@ def chat(payload: ChatInput, request: Request, x_asklily_role: str = Header(defa
         health_filter=health_filter_for_question(payload.question),
     )
     response = dict(ORCHESTRATOR.respond(payload.question, scope, request_id, result))
+    response["presentation"] = _default_presentation()
     if local is not None:
         try:
             conversation_id = LOCAL_IDENTITIES.create_or_append_conversation(

@@ -8,7 +8,7 @@ export type Scope = {
 
 export type Session = {
   request_id: string;
-  identity: { role: string; display_name: string };
+  identity: { role: string; display_name: string; authenticated: boolean };
   scope: Scope;
   profile: "developer" | "standalone";
 };
@@ -41,7 +41,16 @@ export type ChatResult = {
   view_context: ViewContext;
   limitations: string[];
   optic_health: OpticHealthQuery;
+  presentation: PresentationDirective;
+  conversation_id?: string;
 };
+
+export type PresentationModule = { module_id: string; view_id: string };
+export type PresentationDirective = { mode: "chat" | "work"; modules: PresentationModule[] };
+export type Conversation = { conversation_id: string; title: string; updated_at: string };
+export type ConversationMessage = { author: "user" | "assistant"; body: string; source_label: string | null; limitation_label: string | null; created_at: string };
+export type ConversationDetail = Conversation & { messages: ConversationMessage[] };
+export type LocalIdentity = { account_id: string; username: string; display_name: string; role: string; scope: Scope };
 
 export type Health = "healthy" | "critical" | "warning" | "recovered" | "unknown";
 
@@ -108,8 +117,14 @@ export const platformApi = {
       method: "POST",
       body: JSON.stringify({ view_id: "optic_health", scope, filters })
     }),
-  chat: (question: string) =>
-    request<ChatResult>("/v1/chat", { method: "POST", body: JSON.stringify({ question }) }),
+  register: (username: string, password: string, displayName?: string) => request<{ identity: LocalIdentity }>("/v1/auth/register", { method: "POST", body: JSON.stringify({ username, password, display_name: displayName || undefined }) }),
+  login: (username: string, password: string) => request<{ identity: LocalIdentity }>("/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  logout: () => request<{ status: string }>("/v1/auth/logout", { method: "POST" }),
+  conversations: () => request<{ conversations: Conversation[] }>("/v1/conversations"),
+  conversation: (conversationId: string) => request<{ conversation: ConversationDetail }>(`/v1/conversations/${conversationId}`),
+  deleteConversation: (conversationId: string) => request<{ status: string }>(`/v1/conversations/${conversationId}`, { method: "DELETE" }),
+  chat: (question: string, conversationId?: string) =>
+    request<ChatResult>("/v1/chat", { method: "POST", body: JSON.stringify({ question, conversation_id: conversationId }) }),
   opticHealth: (filters: { health?: Health; search?: string } = {}) => {
     const parameters = new URLSearchParams();
     if (filters.health) parameters.set("health", filters.health);
