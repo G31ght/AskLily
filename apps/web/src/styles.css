@@ -19,7 +19,7 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 /* Keep the compact rail optically centered and compact. */
 .shell.rail-collapsed:not(.work) { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 0fr); }
 .shell.rail-collapsed:not(.work) .rail { padding-inline: .5rem; }
-.shell.rail-collapsed:not(.work) .new, .work .new { width: 2.75rem; height: 2.75rem; flex: 0 0 2.75rem; align-self: center; padding: 0; justify-content: center; }
+.shell.rail-collapsed:not(.work) .new, .work .new { width: 2rem; height: 2rem; flex: 0 0 2rem; align-self: center; padding: 0; justify-content: center; }
 .shell.rail-collapsed:not(.work) .account, .work .account { justify-content: center; gap: 0; }
 .shell.rail-collapsed:not(.work) .account .sign-out, .work .account .sign-out { width: 0; margin-left: 0; padding: 0; overflow: hidden; }
 .shell.work { grid-template-columns: 64px minmax(0, .75fr) minmax(0, 1.45fr); }
@@ -40,3 +40,4 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .shell.work .rail:hover .brand { opacity: 0; pointer-events: none; }
 .shell.work .rail:hover .rail-toggle { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
 .shell.work .rail-copy { display: none; }
+.shell.rail-collapsed:not(.work) .new > span:first-child, .shell.work .new > span:first-child { display: grid; place-items: center; width: 100%; height: 100%; font-size: 1.35rem; line-height: 1; }
