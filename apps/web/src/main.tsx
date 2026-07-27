@@ -131,7 +131,7 @@ function ParticleCanvas({ stage, question }: { stage: "portrait" | "questions"; 
       canvas.height = Math.floor(height * pixelRatio);
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       const targets = currentStage === "portrait" ? portraitTargets(width, height) : textTargets(width, height, question);
-      const particleCount = Math.min(1300, Math.max(600, Math.floor(width * height / 680)));
+      const particleCount = Math.min(2600, Math.max(1000, Math.floor(width * height / 250)));
       particles = Array.from({ length: particleCount }, (_, index) => {
         const target = targets[Math.floor(index * targets.length / particleCount)];
         const startX = width * (.12 + seeded(index, 1) * .76);
@@ -159,10 +159,11 @@ function ParticleCanvas({ stage, question }: { stage: "portrait" | "questions"; 
           particle.x += (particle.targetX - particle.x) * .073;
           particle.y += (particle.targetY - particle.y) * .073;
         }
-        const shimmer = .62 + Math.sin(time * .002 + particle.phase) * .28;
+        const isQuestion = currentStage === "questions";
+        const shimmer = isQuestion ? .82 + Math.sin(time * .002 + particle.phase) * .16 : .62 + Math.sin(time * .002 + particle.phase) * .28;
         context.fillStyle = `rgba(236, 225, 255, ${shimmer})`;
         context.beginPath();
-        context.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+        context.arc(particle.x, particle.y, particle.radius + (isQuestion ? .35 : 0), 0, Math.PI * 2);
         context.fill();
       });
       context.globalCompositeOperation = "source-over";
@@ -208,10 +209,10 @@ function textTargets(width: number, height: number, question: string) {
   const source = document.createElement("canvas");
   source.width = Math.max(1, Math.floor(width)); source.height = Math.max(1, Math.floor(height));
   const context = source.getContext("2d")!;
-  const fontSize = Math.max(24, Math.min(width / Math.max(question.length * 1.16, 8), 58));
-  context.font = `600 ${fontSize}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle"; context.fillStyle = "#ffffff";
+  const fontSize = Math.max(30, Math.min(width / Math.max(question.length * 1.05, 8), 72));
+  context.font = `700 ${fontSize}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle"; context.fillStyle = "#ffffff";
   context.fillText(question, width / 2, height * .5);
-  return sampleTargets(context, source.width, source.height, 3);
+  return sampleTargets(context, source.width, source.height, 2);
 }
 
 function sampleTargets(context: CanvasRenderingContext2D, width: number, height: number, step: number) {
