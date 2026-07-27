@@ -16,6 +16,7 @@ function App() {
   const [question, setQuestion] = useState("查看当前光模块健康异常");
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [workMode, setWorkMode] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [welcomeStage, setWelcomeStage] = useState<"portrait" | "questions">("portrait");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,13 +65,13 @@ function App() {
   if (!session) return <main className="loading" role="alert">服务不可用：{error ?? "unknown"}</main>;
   if (!session.identity.authenticated && !identity) return <LoginForm error={error} onSubmit={authenticate} />;
 
-  return <main className={workMode ? "shell work" : "shell"}>
+  return <main className={["shell", workMode && "work", railCollapsed ? "rail-collapsed" : "rail-expanded"].filter(Boolean).join(" ")}>
     <aside className="rail">
-      <div className="brand"><span>◉</span> AskLily</div>
-      <button className="new" onClick={newChat}>＋ 新建对话</button>
+      <div className="rail-top"><div className="brand"><span>◉</span><span className="rail-copy">AskLily</span></div><button className="rail-toggle" type="button" aria-label={railCollapsed ? "展开工具栏" : "收起工具栏"} aria-pressed={railCollapsed} onClick={() => setRailCollapsed((value) => !value)}>{railCollapsed ? "›" : "‹"}</button></div>
+      <button className="new" onClick={newChat}><span aria-hidden="true">＋</span><span className="new-label rail-copy">新建对话</span></button>
       <p className="rail-title">最近对话</p>
-      <div className="history">{conversations.length ? conversations.map((item) => <button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} key={item.conversation_id} onClick={() => openConversation(item.conversation_id)}><span>{item.title}</span><small>{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>) : <p className="muted">暂无已保存对话</p>}</div>
-      <div className="account"><span className="avatar">{(identity?.display_name ?? session.identity.display_name).slice(0, 1).toUpperCase()}</span><span>{identity?.display_name ?? session.identity.display_name}<small>{session.identity.role} · 本地账号</small></span><button onClick={signOut}>退出</button></div>
+      <div className="history">{conversations.length ? conversations.map((item) => <button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} key={item.conversation_id} onClick={() => openConversation(item.conversation_id)}><span className="history-icon" aria-hidden="true">◫</span><span className="history-title rail-copy">{item.title}</span><small className="history-time rail-copy">{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>) : <p className="muted rail-copy">暂无已保存对话</p>}</div>
+      <div className="account"><span className="avatar">{(identity?.display_name ?? session.identity.display_name).slice(0, 1).toUpperCase()}</span><span className="account-details rail-copy">{identity?.display_name ?? session.identity.display_name}<small>{session.identity.role} · 本地账号</small></span><button className="sign-out rail-copy" onClick={signOut}>退出</button></div>
     </aside>
     <section className={!chat && !savedMessages.length ? "conversation idle" : "conversation"}>
       <header><span className="eyebrow">ASKLILY · {session.profile.toUpperCase()} · FIXTURE L0/L1</span>{session.profile === "developer" && <button className="debug" onClick={() => setWorkMode((value) => !value)}>调试：{workMode ? "Chat" : "Work"}</button>}</header>
