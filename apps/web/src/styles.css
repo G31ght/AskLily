@@ -41,3 +41,18 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .shell.work .rail:hover .rail-toggle { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
 .shell.work .rail-copy { display: none; }
 .shell.rail-collapsed:not(.work) .new > span:first-child, .shell.work .new > span:first-child { display: grid; place-items: center; width: 100%; height: 100%; font-size: 1.35rem; line-height: 1; }
+
+/* Both Chat collapse and Work Mode use this single compact rail contract. */
+.shell.rail-compact:not(.work) { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 0fr); }
+.shell.rail-compact .rail { padding-inline: .5rem; }
+.shell.rail-compact .rail-top { position: relative; justify-content: center; }
+.shell.rail-compact .brand { font-size: 0; transition: opacity .16s ease; }
+.shell.rail-compact .brand > span:first-child { font-size: 1.4rem; }
+.shell.rail-compact .rail-toggle { position: absolute; top: 50%; left: 50%; display: grid; opacity: 0; pointer-events: none; transform: translate(-50%, -50%) scale(.86); }
+.shell.rail-compact .rail:hover .brand { opacity: 0; pointer-events: none; }
+.shell.rail-compact .rail:hover .rail-toggle { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+.shell.rail-compact .new { width: 2rem; height: 2rem; flex: 0 0 2rem; align-self: center; padding: 0; justify-content: center; }
+.shell.rail-compact .new > span:first-child { display: grid; place-items: center; width: 100%; height: 100%; font-size: 1.35rem; line-height: 1; }
+.shell.rail-compact .rail-title, .shell.rail-compact .history, .shell.rail-compact .rail-copy { display: none; }
+.shell.rail-compact .account { justify-content: center; gap: 0; }
+.shell.rail-compact .account .sign-out { width: 0; margin-left: 0; padding: 0; overflow: hidden; }

@@ -65,9 +65,10 @@ function App() {
   if (!session) return <main className="loading" role="alert">服务不可用：{error ?? "unknown"}</main>;
   if (!session.identity.authenticated && !identity) return <LoginForm error={error} onSubmit={authenticate} />;
 
-  return <main className={["shell", workMode && "work", railCollapsed ? "rail-collapsed" : "rail-expanded"].filter(Boolean).join(" ")}>
+  const compactRail = workMode || railCollapsed;
+  return <main className={["shell", workMode && "work", railCollapsed ? "rail-collapsed" : "rail-expanded", compactRail && "rail-compact"].filter(Boolean).join(" ")}>
     <aside className="rail">
-      <div className="rail-top"><div className="brand"><span>◉</span><span className="rail-copy">AskLily</span></div><button className="rail-toggle" type="button" aria-label={railCollapsed ? "展开工具栏" : "收起工具栏"} aria-pressed={railCollapsed} onClick={() => setRailCollapsed((value) => !value)}>{railCollapsed ? "›" : "‹"}</button></div>
+      <div className="rail-top"><div className="brand"><span>◉</span><span className="rail-copy">AskLily</span></div><button className="rail-toggle" type="button" aria-label={compactRail ? "展开工具栏" : "收起工具栏"} aria-pressed={compactRail} onClick={() => setRailCollapsed((value) => !value)}>{compactRail ? "›" : "‹"}</button></div>
       <button className="new" onClick={newChat}><span aria-hidden="true">+</span><span className="new-label rail-copy">新建对话</span></button>
       <p className="rail-title">最近对话</p>
       <div className="history">{conversations.length ? conversations.map((item) => <button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} key={item.conversation_id} onClick={() => openConversation(item.conversation_id)}><span className="history-icon" aria-hidden="true">◫</span><span className="history-title rail-copy">{item.title}</span><small className="history-time rail-copy">{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>) : <p className="muted rail-copy">暂无已保存对话</p>}</div>
