@@ -3,7 +3,9 @@
 - 日期：2026-07-28
 - 交接分支：`codex/p5b-local-account-history`
 - 前端检查点：`16f1d75 feat(P5A): add conversation delete action`
-- 结论：当前前端以已接受的自然语言优先体验作为检查点冻结；后续工作转入按 Capability Brief 批次推进的功能开发。
+- 冻结基线：`efd5dc15e71bd8c677db0067d3cbab1912575db3`（本交接报告）
+- 当前状态：**冻结，待 P6 架构收敛完成后再继续 P5 能力扩展。**
+- 结论：当前前端与本机持久化能力是有价值的功能检查点，但不是可独立结项或可直接合并为运行基线的 P5 阶段交付。
 
 ## 1. Git 与工作区核验
 
@@ -50,12 +52,19 @@
 
 ## 6. 文档状态与下一步
 
-`P5A-NATURAL-LANGUAGE-WORKSPACE-UX-brief.md` 和 `P5B-LOCAL-ACCOUNT-HISTORY-brief.md` 的首页状态仍保留了早期“已批准；等待实现任务协议”的表述；这与当前已提交实现不一致。它们应保留为需求与验收依据，但后续应在对应完成包/阶段关闭时更新状态，不应据此误判功能尚未实现。
+`P5A-NATURAL-LANGUAGE-WORKSPACE-UX-brief.md` 和 `P5B-LOCAL-ACCOUNT-HISTORY-brief.md` 曾保留早期“已批准；等待实现任务协议”的表述；该表述已在本次冻结决定中更正为“已实现检查点，冻结待 P6”。它们仍是需求与验收依据，但不构成 P5 已绿色结项的证据。
 
-下一阶段从功能开发开始，而非继续扩展前端外观。启动前应由项目负责人选定首个 Capability；Project Lead 随后只为该能力提交范围明确的 Brief，冻结数据等级、Fixture/Scenario、Scope、Tool/View、展示模块、非目标和验收，再开始实现。前端改动仅处理阻断功能使用的缺陷或在对应 Capability 内必须的展示适配。
+下一阶段先执行 P6 架构收敛，而非继续扩展前端外观或新增业务 Capability。P6 验收完成前，不启动新的 P5 Capability Brief、前端美化批次或真实数据接入；仅允许处理 P6 所需的运行时、配置、迁移、测试和文档收敛工作。
 
-## 7. 交接决定
+## 7. 冻结决定与交接
 
-1. 将当前前端视为可用的 P5A 视觉与交互检查点，不开启泛化美化工作流。
-2. 优先复用本地账号、审计、受限展示与光模块健康 Fixture 基座，逐项扩展业务能力。
-3. 真实数据、SSO、持久化保留策略、Compose 持久化 Profile、Production/HA 和 P3 L4 均不随功能开发自动开放。
+1. 将当前前端视为可用的 P5A 视觉与交互检查点；不在 P6 之外开启泛化美化工作流。
+2. P5 的本地账号、审计、受限展示与光模块健康 Fixture 基座保留，但其运行与持久化形态必须在 P6 中统一后才可作为后续能力扩展基础。
+3. P5 不单独合并到 `main`。P6 应从本冻结基线创建独立分支，并以涵盖 P5 冻结点与 P6 收敛结果的完整验收 PR 回到 `main`。
+4. 真实数据、SSO、持久化保留策略、Production/HA 和 P3 L4 均不随 P6 自动开放。
+
+## 8. 冻结原因与 P6 入口
+
+本次独立审计确认：P5 的自动化检查已通过，但当前代码同时存在 `developer` / `standalone` 运行 Profile；P5 的本地 SQLite 账号、历史与审计能力尚未纳入 P4 的无状态、只读、无持久卷 Compose 运行形态。因此不能把 P5 表述为“统一 Docker 运行基线已验证”。
+
+项目负责人已决定 AskLily 只保留一套应用运行形态：同一套 Compose 与镜像既可连接 Fixture，也可连接客户指定的测试或生产 Zabbix/Prometheus。测试或生产由客户声明的数据源上下文决定，不由前端模式切换或 URL 自动推断。实现该决定的唯一入口是 [P6 统一运行时与数据源架构收敛任务书](../governance/P6-unified-runtime-architecture-convergence-project-lead-task.md)。

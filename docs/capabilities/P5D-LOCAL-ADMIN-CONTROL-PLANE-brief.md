@@ -1,6 +1,7 @@
 # P5D 本地后台管理控制面
 
 - 阶段：Program Phase II / P5D 平台管理面
+- 状态：Fixture/本机持久化范围已交付；随 P5 冻结，待 P6 收敛后再作为统一运行基线的一部分验收
 - 前置 ADR：[ADR-0005](../adr/0005-local-admin-control-plane.md)
 - 数据等级：仅 L0 Fixture 与 L1 Synthetic Scenario 的控制面元数据
 

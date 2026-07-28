@@ -4,7 +4,8 @@
 - 规范版本：v0.1
 - 归档渲染件：[工程开工文档 PDF](../../output/pdf/AskLily_工程开工文档_v0.1.pdf)
 - PDF SHA-256：`9969af91eb371c23daa0cacf9247c433fdb5554a4e7e9f6ac12c9bb0c2dee246`
-- 当前集成基线：`21afa61a567d647a059fcc694e6019c6eb445a77`
+- 当前 `main` 集成基线：`21afa61a567d647a059fcc694e6019c6eb445a77`
+- 待收敛冻结基线：`efd5dc15e71bd8c677db0067d3cbab1912575db3`（P5；尚未合并至 `main`）
 
 ## 文档地位与冲突规则
 
@@ -53,7 +54,7 @@ AskLily 是面向 GPU 数据中心及相关运维环境的 AI 驱动运维平台
 - Scope 必须在会话、Agent、Tool、Domain Query、数据层和结果返回层重复执行。前端和 Agent 不可扩大 Scope，汇总数据同样必须受 Scope 限制。
 - 当前仓库公开。不得提交 Token、endpoint、真实主机或 item 名称、原始指标、真实客户数据、`.env`、密钥、未脱敏日志或事故回放数据。
 - 模型 Provider 必须是可替换边界。任何真实数据出网、持久化、模型接入或新的敏感数据类别都需要 ADR 和项目负责人批准。
-- Demo / Developer 与 Standalone 以 Docker Compose 为基线，支持本地、内网和离线环境。Kubernetes、HA、灾备、多区域和 Production 容量不在当前施工范围。
+- P4 的 Demo / Developer 与 Standalone Compose Profile 是历史已交付事实。项目负责人已决定在 P6 收敛为一套 Docker Compose 与镜像；在 P6 验收前不得把这一目标倒写为 P4 已验证结论。Kubernetes、HA、灾备、多区域和 Production 容量不在当前施工范围。
 - 数据真实性分层为 L0 Fixture、L1 Synthetic Scenario、L2 校准合成数据、L3 脱敏回放、L4 真实只读。Demo 证据不能表述为 L4 或 Production 证据。
 
 ## 当前已交付状态
@@ -65,8 +66,9 @@ AskLily 是面向 GPU 数据中心及相关运维环境的 AI 驱动运维平台
 | P2 光模块纵向切片 | 已关闭 | Fixture / Scenario 驱动的 Demo 能力。 |
 | P3 Zabbix 只读预备 | 已关闭且 L4 延期 | Mock 预备与真实只读数据处理边界；未完成真实 L4。 |
 | P4 Standalone 硬化 | 已关闭 | 受控单机无状态 Compose Profile；非 Production。 |
-| P5 能力扩展 | 未启动 | 后续在项目负责人批准的 Program Phase II 计划内分批执行。 |
-| P6 Production 规划 | 暂停 | 仅在商业化、工程化和容量证据出现后单独立项。 |
+| P5 能力扩展 | 已形成冻结检查点 | P5A 前台、P5B 本地账号历史与 P5D 本机控制面已在 `efd5dc1` 冻结；尚未独立绿色结项或合并。 |
+| P6 统一运行时与数据源架构收敛 | 已授权接手核验与方案 | 统一 Compose、持久化边界与数据源状态模型；实现须在 Project Lead 只读方案获批后开始。 |
+| Production/商业化工程 | 暂停 | HA、Kubernetes、容量、灾备和 Production SLA 仍仅在商业化、工程化和容量证据出现后单独立项。 |
 
 P3 的真实 Zabbix L4 仍延期。它只能在项目负责人提供专用只读环境、最小 Scope 和单次授权后，依照 [ADR-0003](../adr/0003-zabbix-live-readonly-data-handling.md) 与 [P3 L4 Runbook](../runbooks/P3-zabbix-l4-readonly-runbook.md) 执行；不得把 P2 或 P4 的结果表述为真实 Connector 验证。
 
@@ -87,4 +89,4 @@ Program Phase II 是 P0-P4 后的产品成熟化与能力横向扩展计划，�
 2. 可复用的平台共性能力补齐。
 3. 一项一项的业务能力纵向切片。
 
-详细的下一任 Project Lead 授权和首轮交付要求见 [Program Phase II 任务书](../governance/program-phase-ii-project-lead-task.md)。
+P5 已冻结；其继续扩展必须等待 [P6 统一运行时与数据源架构收敛任务书](../governance/P6-unified-runtime-architecture-convergence-project-lead-task.md) 完成并验收。历史的 [Program Phase II 任务书](../governance/program-phase-ii-project-lead-task.md) 仍记录 P0-P4 后的原始接手要求，但不再授权新增 P5 工作。

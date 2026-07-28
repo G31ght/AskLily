@@ -1,6 +1,6 @@
 # P5D 本地后台管理控制面完成包
 
-- 功能与状态：绿色（Fixture/本机持久化范围）
+- 功能与状态：绿色（Fixture/本机持久化范围）；不代表 P5 阶段或统一 Compose 运行基线已结项，P5 已冻结待 P6 收敛。
 - Capability：P5D-LOCAL-ADMIN-CONTROL-PLANE
 - 基线提交：`7240586`（P5A 紧凑工具栏统一）
 

@@ -2,7 +2,7 @@
 
 AI 驱动运维平台。当前交付包含 P2 光模块健康 Fixture Demo、P3 Zabbix 只读 Connector 预备，以及 P4 无状态 Standalone Compose Profile。
 
-项目的可追踪施工约束见 [工程基线](docs/architecture/engineering-baseline.md)。P4 已在 `21afa61` 关闭；真实 Zabbix L4、Production/HA 与业务写操作均不在当前已验证范围内。下一阶段的交接入口见 [Program Phase II Project Lead 任务书](docs/governance/program-phase-ii-project-lead-task.md)。
+项目的可追踪施工约束见 [工程基线](docs/architecture/engineering-baseline.md)。P4 已在 `21afa61` 关闭；P5 已在 `efd5dc1` 冻结，待 P6 统一运行时与数据源架构收敛后再继续。真实 Zabbix L4、Production/HA 与业务写操作均不在当前已验证范围内。下一任 Project Lead 的当前交接入口见 [P6 任务书](docs/governance/P6-unified-runtime-architecture-convergence-project-lead-task.md)。
 
 ## Standalone 快速开始
 

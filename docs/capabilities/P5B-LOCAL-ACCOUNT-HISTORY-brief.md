@@ -1,7 +1,7 @@
 # P5B 本地账号与按账号保存的对话历史
 
 - 阶段：Program Phase II / P5B 平台共性补齐
-- 状态：已获项目负责人批准；等待实现任务协议
+- 状态：已实现的检查点；P5 已冻结，待 P6 统一运行时、持久化与部署收敛后再继续扩展或结项
 - 前置 ADR：[ADR-0004 本地账号、会话与对话历史的持久化边界](../adr/0004-local-account-and-conversation-history.md)
 - 数据等级：首期仅 L0 Fixture 与 L1 Synthetic Scenario
 

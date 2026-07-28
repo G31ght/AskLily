@@ -1,6 +1,6 @@
 # Program Phase II - 新任 Project Lead 任务书
 
-- 状态：待项目负责人授权
+- 状态：历史接手任务书。P5 已冻结；当前后续工作仅依 [P6 统一运行时与数据源架构收敛任务书](P6-unified-runtime-architecture-convergence-project-lead-task.md) 执行。
 - 任务类型：阶段接手、基线核验与产品成熟化计划
 - 初始基线：`21afa61a567d647a059fcc694e6019c6eb445a77`
 - 上一阶段：P0-P4 已关闭；P3 真实 Zabbix L4 延期；P6 Production 规划暂停
