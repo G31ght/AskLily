@@ -16,6 +16,10 @@ PYTHONPATH=services/api/src:packages/contracts/src:packages/domain/src \
 
 启动本地 API 与 Web 后，使用 `project-admin` 从前台登录，在左下角头像右键菜单中选择“管理后台”。后台私有 URI 来自本机忽略的 `apps/web/.env.local` 的 `VITE_ADMIN_PATH`，不得提交或作为安全边界依赖。只有本地 `project-admin` 会话可读取后台；普通账号与未登录请求会被拒绝。
 
+## 分配账号与权限
+
+前台登录页不提供注册。项目管理员在“账号管理”中设置账号、初始密码、显示名称和该账号可读取的站点。新账号始终是只读 `operator`，且站点必须是管理员自身授权 Scope 的非空子集；后台不能创建额外项目管理员、授予写权限或扩大项目范围。管理员应通过受控方式把初始密码传递给用户，用户随后仅可从前台登录。
+
 ## 能力停用
 
 后台只能停用注册且标记为可管理的业务 Capability。停用后服务端将拒绝该能力的查询和聊天执行；不会删除 Fixture、改变 Tool/View 契约，也不会影响严格只读边界。恢复后仅重新允许原有受 Scope 约束的路径。

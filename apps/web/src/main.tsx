@@ -66,10 +66,8 @@ function App() {
 
   function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); const username = String(data.get("username") || ""); const password = String(data.get("password") || "");
-    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-    const action = submitter?.value === "register" ? "register" : "login"; setError(null);
-    const call = action === "register" ? platformApi.register(username, password, String(data.get("displayName") || "")) : platformApi.login(username, password);
-    void call.then((result) => { setIdentity(result.identity); refresh(); }).catch(showError);
+    setError(null);
+    void platformApi.login(username, password).then((result) => { setIdentity(result.identity); refresh(); }).catch(showError);
   }
   function bootstrapProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); const password = String(data.get("password") || "");
@@ -122,7 +120,7 @@ function App() {
   </main>;
 }
 
-function LoginForm({ bootstrapRequired, error, onBootstrap, onSubmit }: { bootstrapRequired: boolean; error: string | null; onBootstrap: (event: FormEvent<HTMLFormElement>) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <main className="login"><section><p className="orb">✦</p><h1>{bootstrapRequired ? "初始化 AskLily" : "AskLily"}</h1><p>{bootstrapRequired ? "请在本机设置首位项目管理员。创建成功后，所有账号均从此处登录。" : "本地账号仅保存 Fixture 对话，不连接真实系统。"}</p>{error && <p className="error">{error}</p>}{bootstrapRequired ? <form onSubmit={onBootstrap}><label>管理员账号<input required name="username" minLength={3} /></label><label>显示名称（可留空）<input name="displayName" /></label><label>管理员密码<input required name="password" type="password" minLength={12} /></label><label>确认密码<input required name="confirmation" type="password" minLength={12} /></label><div><button>创建项目管理员</button></div></form> : <form onSubmit={onSubmit}><label>账号<input required name="username" minLength={3} /></label><label>密码<input required name="password" type="password" minLength={12} /></label><label>显示名称（注册时可选）<input name="displayName" /></label><div><button name="action" value="login">登录</button><button name="action" value="register">注册本地账号</button></div></form>}</section></main>; }
+function LoginForm({ bootstrapRequired, error, onBootstrap, onSubmit }: { bootstrapRequired: boolean; error: string | null; onBootstrap: (event: FormEvent<HTMLFormElement>) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <main className="login"><section><p className="orb">✦</p><h1>{bootstrapRequired ? "初始化 AskLily" : "AskLily"}</h1><p>{bootstrapRequired ? "请在本机设置首位项目管理员。创建成功后，所有账号均从此处登录。" : "本地账号由项目管理员在后台分配；不提供自助注册。"}</p>{error && <p className="error">{error}</p>}{bootstrapRequired ? <form onSubmit={onBootstrap}><label>管理员账号<input required name="username" minLength={3} /></label><label>显示名称（可留空）<input name="displayName" /></label><label>管理员密码<input required name="password" type="password" minLength={12} /></label><label>确认密码<input required name="confirmation" type="password" minLength={12} /></label><div><button>创建项目管理员</button></div></form> : <form onSubmit={onSubmit}><label>账号<input required name="username" minLength={3} /></label><label>密码<input required name="password" type="password" minLength={12} /></label><div><button>登录</button></div></form>}</section></main>; }
 
 function Welcome({ stage, onAsk }: { stage: "portrait" | "questions"; onAsk: (question: string) => void }) {
   return <div className={`welcome ${stage}`}>

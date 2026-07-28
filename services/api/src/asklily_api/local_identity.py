@@ -120,18 +120,22 @@ class LocalIdentityStore:
         with self._connect() as connection:
             return connection.execute("SELECT 1 FROM accounts WHERE role = 'project-admin' LIMIT 1").fetchone() is not None
 
-    def register(self, username: str, password: str, display_name: str | None = None) -> LocalIdentity:
+    def create_operator(
+        self, username: str, password: str, display_name: str | None, scope: Scope
+    ) -> LocalIdentity:
         self.initialize()
         if not USERNAME.fullmatch(username):
             raise IdentityError("local_username_invalid")
         if len(password) < 12 or len(password) > 128:
             raise IdentityError("local_password_length_invalid")
+        if not scope.site_ids or scope.actions != frozenset({"read"}):
+            raise IdentityError("local_operator_scope_invalid")
         identity = LocalIdentity(
             account_id=f"acct-{secrets.token_urlsafe(18)}",
             username=username,
             display_name=display_name.strip() if display_name and display_name.strip() else username,
             role="operator",
-            scope=Scope("demo-project", frozenset({"site-a"}), actions=frozenset({"read"})),
+            scope=scope,
         )
         now = _now()
         try:

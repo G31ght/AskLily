@@ -25,7 +25,8 @@ def test_admin_can_stop_and_restore_only_business_capability(tmp_path: Path) -> 
     store = _store(tmp_path)
     admin = _admin_client(store)
     operator = TestClient(main.app)
-    assert operator.post("/v1/auth/register", json={"username": "local-operator", "password": "safe-operator-password-123"}).status_code == 201
+    assert admin.post("/v1/admin/accounts", json={"username": "local-operator", "password": "safe-operator-password-123", "site_ids": ["site-a"]}).status_code == 201
+    assert operator.post("/v1/auth/login", json={"username": "local-operator", "password": "safe-operator-password-123"}).status_code == 200
 
     listed = admin.get("/v1/admin/capabilities")
     optic = next(item for item in listed.json()["capabilities"] if item["capability_id"] == "optic-health")
@@ -44,8 +45,9 @@ def test_admin_account_controls_and_audit_are_persistent_and_minimal(tmp_path: P
     store = _store(tmp_path)
     admin = _admin_client(store)
     operator = TestClient(main.app)
-    registered = operator.post("/v1/auth/register", json={"username": "disabled-operator", "password": "safe-operator-password-123"})
+    registered = admin.post("/v1/admin/accounts", json={"username": "disabled-operator", "password": "safe-operator-password-123", "site_ids": ["site-a"]})
     assert registered.status_code == 201
+    assert operator.post("/v1/auth/login", json={"username": "disabled-operator", "password": "safe-operator-password-123"}).status_code == 200
 
     assert operator.get("/v1/admin/overview").status_code == 403
     accounts = admin.get("/v1/admin/accounts").json()["accounts"]
@@ -59,6 +61,23 @@ def test_admin_account_controls_and_audit_are_persistent_and_minimal(tmp_path: P
     assert events
     assert {"actor_id", "action", "outcome", "request_id", "scope_project_id"}.issubset(events[0])
     assert "body" not in events[0] and "password" not in events[0]
+
+
+def test_only_admin_can_create_read_only_operator_accounts_within_own_scope(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    admin = _admin_client(store)
+    public = TestClient(main.app)
+    assert public.post("/v1/auth/register", json={"username": "self-service", "password": "safe-operator-password-123"}).status_code == 404
+
+    created = admin.post("/v1/admin/accounts", json={"username": "site-b-operator", "password": "safe-operator-password-123", "site_ids": ["site-b"]})
+    assert created.status_code == 201
+    assert created.json()["account"]["role"] == "operator"
+    assert created.json()["account"]["scope"]["site_ids"] == ["site-b"]
+    assert created.json()["account"]["scope"]["actions"] == ["read"]
+
+    denied = admin.post("/v1/admin/accounts", json={"username": "outside-scope", "password": "safe-operator-password-123", "site_ids": ["site-c"]})
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "scope_site_not_allowed"
 
 
 def test_only_one_project_admin_can_be_bootstrapped(tmp_path: Path) -> None:

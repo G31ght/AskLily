@@ -124,7 +124,6 @@ export const platformApi = {
       method: "POST",
       body: JSON.stringify({ view_id: "optic_health", scope, filters })
     }),
-  register: (username: string, password: string, displayName?: string) => request<{ identity: LocalIdentity }>("/v1/auth/register", { method: "POST", body: JSON.stringify({ username, password, display_name: displayName || undefined }) }),
   login: (username: string, password: string) => request<{ identity: LocalIdentity }>("/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   logout: () => request<{ status: string }>("/v1/auth/logout", { method: "POST" }),
   adminBootstrapStatus: () => request<AdminBootstrapStatus>("/v1/admin/bootstrap-status"),
@@ -145,6 +144,7 @@ export const platformApi = {
   adminCapabilities: () => request<{ capabilities: Capability[] }>("/v1/admin/capabilities"),
   setCapabilityState: (capabilityId: string, enabled: boolean) => request<{ capability: Capability }>(`/v1/admin/capabilities/${capabilityId}/state`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
   adminAccounts: () => request<{ accounts: AdminAccount[] }>("/v1/admin/accounts"),
+  createAdminAccount: (username: string, password: string, siteIds: string[], displayName?: string) => request<{ account: LocalIdentity }>("/v1/admin/accounts", { method: "POST", body: JSON.stringify({ username, password, display_name: displayName || undefined, site_ids: siteIds }) }),
   setAccountState: (accountId: string, status: "active" | "disabled") => request<{ account: AdminAccount }>(`/v1/admin/accounts/${accountId}/state`, { method: "PATCH", body: JSON.stringify({ status }) }),
   revokeAccountSessions: (accountId: string) => request<{ status: string }>(`/v1/admin/accounts/${accountId}/sessions`, { method: "DELETE" }),
   adminAudit: (action?: string) => request<{ events: AuditEvent[] }>(`/v1/admin/audit${action ? `?action=${encodeURIComponent(action)}` : ""}`),

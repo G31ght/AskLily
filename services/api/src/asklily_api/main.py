@@ -74,7 +74,7 @@ class ChatInput(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=100)
 
 
-class LocalRegistrationInput(BaseModel):
+class LocalAccountInput(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=12, max_length=128)
     display_name: str | None = Field(default=None, max_length=100)
@@ -85,7 +85,7 @@ class LocalLoginInput(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
-class LocalAdminBootstrapInput(LocalRegistrationInput):
+class LocalAdminBootstrapInput(LocalAccountInput):
     """First-run local administrator creation; unavailable after bootstrap."""
 
 
@@ -99,6 +99,10 @@ class AdminCapabilityStateInput(BaseModel):
 
 class AdminAccountStateInput(BaseModel):
     status: str = Field(pattern="^(active|disabled)$")
+
+
+class AdminAccountCreateInput(LocalAccountInput):
+    site_ids: set[str] = Field(min_length=1, max_length=100)
 
 
 DEVELOPMENT_IDENTITIES: dict[str, tuple[str, Scope]] = {
@@ -298,19 +302,6 @@ def _default_presentation() -> dict[str, object]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "profile": RUNTIME_PROFILE, "data": "fixture_l0_l1", "rule_version": OPTIC_RULE_VERSION}
-
-
-@app.post("/v1/auth/register", status_code=201)
-def register_local_account(payload: LocalRegistrationInput, request: Request, response: Response) -> dict[str, object]:
-    request_id = _request_id(request)
-    try:
-        identity = LOCAL_IDENTITIES.register(payload.username, payload.password, payload.display_name)
-        token = LOCAL_IDENTITIES.issue_session(identity.account_id)
-    except IdentityError as exc:
-        raise HTTPException(400, detail={"code": str(exc), "request_id": request_id}) from exc
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
-    _audit(identity.account_id, "local_account.register", "allowed", request_id, identity.scope)
-    return {"request_id": request_id, "identity": _local_identity_dict(identity)}
 
 
 @app.post("/v1/auth/login")
@@ -596,6 +587,28 @@ def admin_accounts(request: Request) -> dict[str, object]:
     identity = _require_admin(request, request_id)
     _audit(identity.account_id, "admin.account.read", "allowed", request_id, identity.scope)
     return {"request_id": request_id, "accounts": LOCAL_IDENTITIES.list_accounts()}
+
+
+@app.post("/v1/admin/accounts", status_code=201)
+def create_admin_account(payload: AdminAccountCreateInput, request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    requested_sites = frozenset(payload.site_ids)
+    if not requested_sites.issubset(identity.scope.site_ids):
+        _audit(identity.account_id, "admin.account.create", "denied", request_id, identity.scope, reason="scope_site_not_allowed")
+        raise HTTPException(403, detail={"code": "scope_site_not_allowed", "request_id": request_id})
+    try:
+        account = LOCAL_IDENTITIES.create_operator(
+            payload.username,
+            payload.password,
+            payload.display_name,
+            Scope(identity.scope.project_id, requested_sites, actions=frozenset({"read"})),
+        )
+    except IdentityError as exc:
+        _audit(identity.account_id, "admin.account.create", "denied", request_id, identity.scope, reason=str(exc))
+        raise HTTPException(400, detail={"code": str(exc), "request_id": request_id}) from exc
+    _audit(identity.account_id, "admin.account.create", "allowed", request_id, account.scope)
+    return {"request_id": request_id, "account": _local_identity_dict(account)}
 
 
 @app.patch("/v1/admin/accounts/{account_id}/state")
