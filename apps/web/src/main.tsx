@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AdminApp } from "./AdminApp";
+import { ADMIN_PATH, isAdminPath } from "./routes";
 import { ApiFailure, ChatResult, Conversation, ConversationMessage, Health, LocalIdentity, OpticHealthQuery, PresentationModule, Session, platformApi } from "./api";
 import "./styles.css";
 
@@ -19,17 +20,46 @@ function App() {
   const [workMode, setWorkMode] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [welcomeStage, setWelcomeStage] = useState<"portrait" | "questions">("portrait");
+  const [bootstrapRequired, setBootstrapRequired] = useState(false);
+  const [frontAuthRequired, setFrontAuthRequired] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = () => void Promise.all([platformApi.session(), platformApi.opticHealth(), platformApi.capabilities()])
-    .then(([nextSession, result]) => { setSession(nextSession); setOpticHealth(result.query); if (nextSession.identity.authenticated) void refreshHistory(); })
-    .catch(showError).finally(() => setLoading(false));
+    .then(async ([nextSession, result]) => {
+      setSession(nextSession); setOpticHealth(result.query);
+      if (nextSession.identity.authenticated) {
+        setFrontAuthRequired(false); setBootstrapRequired(false); void refreshHistory();
+      } else {
+        setFrontAuthRequired(true);
+        setBootstrapRequired((await platformApi.adminBootstrapStatus()).bootstrap_required);
+      }
+    })
+    .catch(async (reason) => {
+      if (reason instanceof ApiFailure && reason.status === 401) {
+        try {
+          setFrontAuthRequired(true);
+          setBootstrapRequired((await platformApi.adminBootstrapStatus()).bootstrap_required);
+          setError(null);
+          return;
+        } catch (fallbackError) { showError(fallbackError); return; }
+      }
+      showError(reason);
+    }).finally(() => setLoading(false));
   useEffect(refresh, []);
   useEffect(() => {
     const timer = window.setTimeout(() => setWelcomeStage(welcomeStage === "portrait" ? "questions" : "portrait"), 8000);
     return () => window.clearTimeout(timer);
   }, [welcomeStage]);
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const close = (event: MouseEvent) => { if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setAccountMenuOpen(false); };
+    window.addEventListener("mousedown", close); window.addEventListener("keydown", escape);
+    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", escape); };
+  }, [accountMenuOpen]);
 
   function showError(reason: unknown) { setError(reason instanceof ApiFailure ? reason.code : "api_unavailable"); }
   function refreshHistory() { void platformApi.conversations().then((value) => setConversations(value.conversations)).catch(showError); }
@@ -40,6 +70,13 @@ function App() {
     const action = submitter?.value === "register" ? "register" : "login"; setError(null);
     const call = action === "register" ? platformApi.register(username, password, String(data.get("displayName") || "")) : platformApi.login(username, password);
     void call.then((result) => { setIdentity(result.identity); refresh(); }).catch(showError);
+  }
+  function bootstrapProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const data = new FormData(event.currentTarget); const password = String(data.get("password") || "");
+    if (password !== String(data.get("confirmation") || "")) { setError("local_password_confirmation_mismatch"); return; }
+    setError(null);
+    void platformApi.bootstrapAdmin(String(data.get("username") || ""), password, String(data.get("displayName") || ""))
+      .then((result) => { setIdentity(result.identity); refresh(); }).catch(showError);
   }
 
   function ask(nextQuestion: string) {
@@ -63,8 +100,8 @@ function App() {
   }
 
   if (loading) return <main className="loading">正在准备受限 Fixture 工作台…</main>;
+  if (frontAuthRequired && !identity) return <LoginForm bootstrapRequired={bootstrapRequired} error={error} onBootstrap={bootstrapProject} onSubmit={authenticate} />;
   if (!session) return <main className="loading" role="alert">服务不可用：{error ?? "unknown"}</main>;
-  if (!session.identity.authenticated && !identity) return <LoginForm error={error} onSubmit={authenticate} />;
 
   const compactRail = workMode || railCollapsed;
   return <main className={["shell", workMode && "work", railCollapsed ? "rail-collapsed" : "rail-expanded", compactRail && "rail-compact"].filter(Boolean).join(" ")}>
@@ -73,7 +110,7 @@ function App() {
       <button className="new" onClick={newChat}><span aria-hidden="true">+</span><span className="new-label rail-copy">新建对话</span></button>
       <p className="rail-title">最近对话</p>
       <div className="history">{conversations.length ? conversations.map((item) => <button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} key={item.conversation_id} onClick={() => openConversation(item.conversation_id)}><span className="history-icon" aria-hidden="true">◫</span><span className="history-title rail-copy">{item.title}</span><small className="history-time rail-copy">{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>) : <p className="muted rail-copy">暂无已保存对话</p>}</div>
-      <div className="account"><span className="avatar">{(identity?.display_name ?? session.identity.display_name).slice(0, 1).toUpperCase()}</span><span className="account-details rail-copy">{identity?.display_name ?? session.identity.display_name}<small>{session.identity.role} · 本地账号</small></span><button className="sign-out rail-copy" onClick={signOut}>退出</button></div>
+      <div className="account" ref={accountMenuRef}><button className="account-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)} onContextMenu={(event) => { event.preventDefault(); setAccountMenuOpen(true); }}><span className="avatar">{(identity?.display_name ?? session.identity.display_name).slice(0, 1).toUpperCase()}</span><span className="account-details rail-copy">{identity?.display_name ?? session.identity.display_name}<small>{session.identity.role} · 本地账号</small></span></button>{accountMenuOpen && <div className="account-menu" role="menu">{session.identity.role === "project-admin" && ADMIN_PATH && <button role="menuitem" onClick={() => { if (ADMIN_PATH) window.location.assign(ADMIN_PATH); }}>管理后台</button>}<button role="menuitem" onClick={() => { setAccountMenuOpen(false); signOut(); }}>退出</button></div>}</div>
     </aside>
     <section className={!chat && !savedMessages.length ? "conversation idle" : "conversation"}>
       <header><span className="eyebrow">ASKLILY · {session.profile.toUpperCase()} · FIXTURE L0/L1</span>{session.profile === "developer" && <button className="debug" onClick={() => setWorkMode((value) => !value)}>调试：{workMode ? "Chat" : "Work"}</button>}</header>
@@ -85,7 +122,7 @@ function App() {
   </main>;
 }
 
-function LoginForm({ error, onSubmit }: { error: string | null; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <main className="login"><section><p className="orb">✦</p><h1>AskLily</h1><p>本地账号仅保存 Fixture 对话，不连接真实系统。</p>{error && <p className="error">{error}</p>}<form onSubmit={onSubmit}><label>账号<input required name="username" minLength={3} /></label><label>密码<input required name="password" type="password" minLength={12} /></label><label>显示名称（注册时可选）<input name="displayName" /></label><div><button name="action" value="login">登录</button><button name="action" value="register">注册本地账号</button></div></form></section></main>; }
+function LoginForm({ bootstrapRequired, error, onBootstrap, onSubmit }: { bootstrapRequired: boolean; error: string | null; onBootstrap: (event: FormEvent<HTMLFormElement>) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <main className="login"><section><p className="orb">✦</p><h1>{bootstrapRequired ? "初始化 AskLily" : "AskLily"}</h1><p>{bootstrapRequired ? "请在本机设置首位项目管理员。创建成功后，所有账号均从此处登录。" : "本地账号仅保存 Fixture 对话，不连接真实系统。"}</p>{error && <p className="error">{error}</p>}{bootstrapRequired ? <form onSubmit={onBootstrap}><label>管理员账号<input required name="username" minLength={3} /></label><label>显示名称（可留空）<input name="displayName" /></label><label>管理员密码<input required name="password" type="password" minLength={12} /></label><label>确认密码<input required name="confirmation" type="password" minLength={12} /></label><div><button>创建项目管理员</button></div></form> : <form onSubmit={onSubmit}><label>账号<input required name="username" minLength={3} /></label><label>密码<input required name="password" type="password" minLength={12} /></label><label>显示名称（注册时可选）<input name="displayName" /></label><div><button name="action" value="login">登录</button><button name="action" value="register">注册本地账号</button></div></form>}</section></main>; }
 
 function Welcome({ stage, onAsk }: { stage: "portrait" | "questions"; onAsk: (question: string) => void }) {
   return <div className={`welcome ${stage}`}>
@@ -233,4 +270,4 @@ function WorkspaceModules({ modules, query }: { modules: PresentationModule[]; q
 
 function SavedConversation({ messages }: { messages: ConversationMessage[] }) { return <article className="answer saved-conversation">{messages.map((message, index) => <section key={`${message.created_at}-${index}`}><p className={message.author === "user" ? "bubble" : ""}>{message.body}</p>{message.author === "assistant" && <p className="meta">来源：{message.source_label ?? "-"} · 限制：{message.limitation_label ?? "-"}</p>}</section>)}</article>; }
 
-createRoot(document.getElementById("root")!).render(window.location.pathname.startsWith("/admin") ? <AdminApp /> : <App />);
+createRoot(document.getElementById("root")!).render(isAdminPath(window.location.pathname) ? <AdminApp /> : <App />);

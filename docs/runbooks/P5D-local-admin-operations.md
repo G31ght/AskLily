@@ -10,11 +10,11 @@ PYTHONPATH=services/api/src:packages/contracts/src:packages/domain/src \
   .venv/bin/python -m asklily_api.admin_bootstrap
 ```
 
-该命令只允许在尚无本地 `project-admin` 时成功，并通过终端密码输入创建管理员。也可以首次打开 `/admin`，在“初始化后台”页输入管理员信息；该页面只在尚无管理员时显示，创建完成后服务端会永久拒绝后续初始化请求。不要将密码写入 shell 历史、环境变量、仓库、截图或日志。
+该命令只允许在尚无本地 `project-admin` 时成功，并通过终端密码输入创建管理员。也可以首次打开前台根路径，在“初始化 AskLily”页输入管理员信息；该页面只在尚无管理员时显示，创建完成后服务端会永久拒绝后续初始化请求。不要将密码写入 shell 历史、环境变量、仓库、截图或日志。
 
 ## 访问后台
 
-启动本地 API 与 Web 后访问 `/admin`。只有本地 `project-admin` 会话可读取后台；普通账号与未登录请求会被拒绝。
+启动本地 API 与 Web 后，使用 `project-admin` 从前台登录，在左下角头像右键菜单中选择“管理后台”。后台私有 URI 来自本机忽略的 `apps/web/.env.local` 的 `VITE_ADMIN_PATH`，不得提交或作为安全边界依赖。只有本地 `project-admin` 会话可读取后台；普通账号与未登录请求会被拒绝。
 
 ## 能力停用
 

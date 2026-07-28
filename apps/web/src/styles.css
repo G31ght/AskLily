@@ -56,3 +56,13 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .shell.rail-compact .rail-title, .shell.rail-compact .history, .shell.rail-compact .rail-copy { display: none; }
 .shell.rail-compact .account { justify-content: center; gap: 0; }
 .shell.rail-compact .account .sign-out { width: 0; margin-left: 0; padding: 0; overflow: hidden; }
+
+/* Account actions live in a context menu so the rail stays a navigation surface. */
+.account { position: relative; }
+.account-menu-trigger { display: flex; align-items: center; width: 100%; min-width: 0; gap: .6rem; margin: 0 !important; padding: .2rem; border-radius: .7rem; color: #132041 !important; text-align: left; }
+.account-menu-trigger:hover { background: #efefff; }
+.account-details { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.account-menu { position: absolute; z-index: 30; bottom: calc(100% + .6rem); left: 0; display: grid; min-width: 10.5rem; padding: .35rem; border: 1px solid #dfe2f5; border-radius: .8rem; background: #fffffff5; box-shadow: 0 1rem 2.5rem #25336930; }
+.account-menu button { width: 100%; margin: 0 !important; padding: .55rem .65rem; border-radius: .55rem; color: #26315d !important; text-align: left; }
+.account-menu button:hover { background: #eeedff; color: #4d48ca !important; }
+.shell.rail-compact .account-menu { bottom: 0; left: calc(100% + .55rem); }

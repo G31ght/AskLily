@@ -26,6 +26,6 @@ docker compose --env-file deploy/standalone/.env --profile standalone down --vol
 
 ## 本地后台管理（P5D）
 
-`/admin` 是独立的本地管理控制面，仅允许通过本机交互式初始化创建的 `project-admin` 账号访问。它可查看注册能力、管理本地账号状态、持久化最小审计，并停用或恢复已注册的业务 Capability；不会开放真实数据、模型 Provider、写操作或任意契约配置。
+管理控制面只通过前台本地 `project-admin` 账号的头像菜单进入。实际路径由未纳入仓库的本机 `VITE_ADMIN_PATH` 配置提供，且 API 仍强制校验 `project-admin` 身份；私有 URI 只是一层降低入口被发现概率的措施。它可查看注册能力、管理本地账号状态、持久化最小审计，并停用或恢复已注册的业务 Capability；不会开放真实数据、模型 Provider、写操作或任意契约配置。
 
 初始化与运行边界见 [P5D 本地后台管理操作](docs/runbooks/P5D-local-admin-operations.md)。该持久化能力不改写 P4 无状态 Standalone 的验收结论。
