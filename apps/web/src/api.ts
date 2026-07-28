@@ -57,6 +57,7 @@ export type AdminOverview = { metrics: { capability_total: number; capability_en
 export type AdminAccount = { account_id: string; username: string; display_name: string; role: string; project_id: string; site_ids: string[]; status: "active" | "disabled"; created_at: string };
 export type AuditEvent = { event_id: string; occurred_at: string; actor_id: string; action: string; outcome: string; request_id: string; query_id: string | null; scope_project_id: string; tool_id: string | null; reason_code: string | null };
 export type AdminSystem = { profile: string; data_level: string; read_only: boolean; configuration_schema: string; limitations: string[] };
+export type AdminBootstrapStatus = { bootstrap_required: boolean };
 
 export type Health = "healthy" | "critical" | "warning" | "recovered" | "unknown";
 
@@ -126,6 +127,8 @@ export const platformApi = {
   register: (username: string, password: string, displayName?: string) => request<{ identity: LocalIdentity }>("/v1/auth/register", { method: "POST", body: JSON.stringify({ username, password, display_name: displayName || undefined }) }),
   login: (username: string, password: string) => request<{ identity: LocalIdentity }>("/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   logout: () => request<{ status: string }>("/v1/auth/logout", { method: "POST" }),
+  adminBootstrapStatus: () => request<AdminBootstrapStatus>("/v1/admin/bootstrap-status"),
+  bootstrapAdmin: (username: string, password: string, displayName?: string) => request<{ identity: LocalIdentity }>("/v1/admin/bootstrap", { method: "POST", body: JSON.stringify({ username, password, display_name: displayName || undefined }) }),
   conversations: () => request<{ conversations: Conversation[] }>("/v1/conversations"),
   conversation: (conversationId: string) => request<{ conversation: ConversationDetail }>(`/v1/conversations/${conversationId}`),
   deleteConversation: (conversationId: string) => request<{ status: string }>(`/v1/conversations/${conversationId}`, { method: "DELETE" }),

@@ -2,13 +2,15 @@
 
 ## 初始化管理员
 
-仅在运行 AskLily 的本机终端执行：
+从任意目录执行时，先切换到仓库根目录：
 
 ```bash
-PYTHONPATH=services/api/src:packages/contracts/src:packages/domain/src python -m asklily_api.admin_bootstrap
+cd /Users/geight.ji/PyCharmMiscProject/AskLily
+PYTHONPATH=services/api/src:packages/contracts/src:packages/domain/src \
+  .venv/bin/python -m asklily_api.admin_bootstrap
 ```
 
-该命令只允许在尚无本地 `project-admin` 时成功，并通过终端密码输入创建管理员。不要将密码写入 shell 历史、环境变量、仓库、截图或日志。
+该命令只允许在尚无本地 `project-admin` 时成功，并通过终端密码输入创建管理员。也可以首次打开 `/admin`，在“初始化后台”页输入管理员信息；该页面只在尚无管理员时显示，创建完成后服务端会永久拒绝后续初始化请求。不要将密码写入 shell 历史、环境变量、仓库、截图或日志。
 
 ## 访问后台
 
@@ -21,4 +23,3 @@ PYTHONPATH=services/api/src:packages/contracts/src:packages/domain/src python -m
 ## 审计与恢复
 
 审计保存在本地 SQLite 的 `audit_events` 表，且不包含对话正文、密码或 Token。账号停用会立即撤销其会话；管理员可单独撤销账号会话。管理员密码丢失不提供仓库或默认后门恢复流程。
-

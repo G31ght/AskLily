@@ -113,6 +113,12 @@ class LocalIdentityStore:
             account_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(accounts)")}
             if "status" not in account_columns:
                 connection.execute("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+            connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_project_admin ON accounts(role) WHERE role = 'project-admin'")
+
+    def project_admin_exists(self) -> bool:
+        self.initialize()
+        with self._connect() as connection:
+            return connection.execute("SELECT 1 FROM accounts WHERE role = 'project-admin' LIMIT 1").fetchone() is not None
 
     def register(self, username: str, password: str, display_name: str | None = None) -> LocalIdentity:
         self.initialize()
@@ -164,6 +170,8 @@ class LocalIdentityStore:
                      identity.scope.project_id, ",".join(sorted(identity.scope.site_ids)), _now()),
                 )
         except sqlite3.IntegrityError as exc:
+            if self.project_admin_exists():
+                raise IdentityError("local_project_admin_already_exists") from exc
             raise IdentityError("local_username_already_exists") from exc
         return identity
 

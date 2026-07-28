@@ -85,6 +85,10 @@ class LocalLoginInput(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class LocalAdminBootstrapInput(LocalRegistrationInput):
+    """First-run local administrator creation; unavailable after bootstrap."""
+
+
 class AccountDeletionInput(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
@@ -319,6 +323,29 @@ def login_local_account(payload: LocalLoginInput, request: Request, response: Re
         raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
     _audit(identity.account_id, "local_account.login", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "identity": _local_identity_dict(identity)}
+
+
+@app.get("/v1/admin/bootstrap-status")
+def admin_bootstrap_status(request: Request) -> dict[str, object]:
+    """Expose only whether first-run local setup is still required."""
+    return {"request_id": _request_id(request), "bootstrap_required": not LOCAL_IDENTITIES.project_admin_exists()}
+
+
+@app.post("/v1/admin/bootstrap", status_code=201)
+def bootstrap_local_project_admin(payload: LocalAdminBootstrapInput, request: Request, response: Response) -> dict[str, object]:
+    request_id = _request_id(request)
+    if LOCAL_IDENTITIES.project_admin_exists():
+        raise HTTPException(409, detail={"code": "local_project_admin_already_exists", "request_id": request_id})
+    try:
+        identity = LOCAL_IDENTITIES.bootstrap_project_admin(payload.username, payload.password, payload.display_name)
+        token = LOCAL_IDENTITIES.issue_session(identity.account_id)
+    except IdentityError as exc:
+        code = str(exc)
+        status = 409 if code == "local_project_admin_already_exists" else 400
+        raise HTTPException(status, detail={"code": code, "request_id": request_id}) from exc
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
+    _audit(identity.account_id, "local_project_admin.bootstrap", "allowed", request_id, identity.scope)
     return {"request_id": request_id, "identity": _local_identity_dict(identity)}
 
 

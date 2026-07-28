@@ -26,15 +26,31 @@ export function AdminApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [auditFilter, setAuditFilter] = useState("");
+  const [bootstrapRequired, setBootstrapRequired] = useState(false);
 
   const refresh = (action = auditFilter) => void platformApi.session().then(async (nextSession) => {
     setSession(nextSession);
-    if (!nextSession.identity.authenticated || nextSession.identity.role !== "project-admin") return;
+    if (!nextSession.identity.authenticated) {
+      const status = await platformApi.adminBootstrapStatus();
+      setBootstrapRequired(status.bootstrap_required);
+      return;
+    }
+    setBootstrapRequired(false);
+    if (nextSession.identity.role !== "project-admin") return;
     const [nextOverview, nextCapabilities, nextAccounts, nextAudit, nextSystem] = await Promise.all([
       platformApi.adminOverview(), platformApi.adminCapabilities(), platformApi.adminAccounts(), platformApi.adminAudit(action || undefined), platformApi.adminSystem(),
     ]);
     setOverview(nextOverview); setCapabilities(nextCapabilities.capabilities); setAccounts(nextAccounts.accounts); setAudit(nextAudit.events); setSystem(nextSystem);
-  }).catch((reason) => setError(errorCode(reason))).finally(() => setLoading(false));
+  }).catch(async (reason) => {
+    if (reason instanceof ApiFailure && reason.status === 401) {
+      try {
+        const status = await platformApi.adminBootstrapStatus();
+        setSession(null); setBootstrapRequired(status.bootstrap_required); setError(null);
+        return;
+      } catch (fallbackError) { setError(errorCode(fallbackError)); return; }
+    }
+    setError(errorCode(reason));
+  }).finally(() => setLoading(false));
 
   useEffect(() => { refresh(); }, []);
 
@@ -44,13 +60,21 @@ export function AdminApp() {
       .then(() => { setLoading(true); refresh(); }).catch((reason) => setError(errorCode(reason)));
   }
 
+  function submitBootstrap(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const data = new FormData(event.currentTarget); const password = String(data.get("password") || "");
+    if (password !== String(data.get("confirmation") || "")) { setError("local_password_confirmation_mismatch"); return; }
+    setError(null);
+    void platformApi.bootstrapAdmin(String(data.get("username") || ""), password, String(data.get("displayName") || ""))
+      .then(() => { setLoading(true); refresh(); }).catch((reason) => setError(errorCode(reason)));
+  }
+
   function signOut() { void platformApi.logout().finally(() => { setSession(null); setOverview(null); setLoading(false); }); }
   function updateCapability(item: Capability) { void platformApi.setCapabilityState(item.capability_id, !item.enabled).then(() => refresh()).catch((reason) => setError(errorCode(reason))); }
   function updateAccount(item: AdminAccount) { const status = item.status === "active" ? "disabled" : "active"; void platformApi.setAccountState(item.account_id, status).then(() => refresh()).catch((reason) => setError(errorCode(reason))); }
   function revokeSessions(item: AdminAccount) { void platformApi.revokeAccountSessions(item.account_id).then(() => refresh()).catch((reason) => setError(errorCode(reason))); }
 
   if (loading) return <main className="admin-loading">正在验证本地管理权限…</main>;
-  if (!session?.identity.authenticated) return <AdminLogin error={error} onSubmit={submitLogin} />;
+  if (!session?.identity.authenticated) return <AdminLogin bootstrapRequired={bootstrapRequired} error={error} onBootstrap={submitBootstrap} onLogin={submitLogin} />;
   if (session.identity.role !== "project-admin") return <main className="admin-loading"><section className="admin-denied"><p className="admin-mark">◇</p><h1>管理权限受限</h1><p>此页面只允许通过本机初始化的 project-admin 账号访问。</p><button onClick={signOut}>退出当前账号</button></section></main>;
 
   return <main className="admin-shell">
@@ -72,7 +96,10 @@ export function AdminApp() {
   </main>;
 }
 
-function AdminLogin({ error, onSubmit }: { error: string | null; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <main className="admin-loading"><section className="admin-login"><p className="admin-mark">◇</p><p className="admin-kicker">ASKLILY · LOCAL CONTROL PLANE</p><h1>后台管理登录</h1><p>仅接受经本机初始化的项目管理员账号。</p>{error && <p className="admin-error">登录未完成：{error}</p>}<form onSubmit={onSubmit}><label>账号<input name="username" required minLength={3}/></label><label>密码<input name="password" required type="password"/></label><button>进入管理后台</button></form><small>前台查询请返回 AskLily。</small></section></main>; }
+function AdminLogin({ bootstrapRequired, error, onBootstrap, onLogin }: { bootstrapRequired: boolean; error: string | null; onBootstrap: (event: FormEvent<HTMLFormElement>) => void; onLogin: (event: FormEvent<HTMLFormElement>) => void }) {
+  const title = bootstrapRequired ? "初始化后台" : "后台管理登录";
+  return <main className="admin-loading"><section className="admin-login"><p className="admin-mark">◇</p><p className="admin-kicker">ASKLILY · LOCAL CONTROL PLANE</p><h1>{title}</h1><p>{bootstrapRequired ? "尚未创建本地项目管理员。请在本机设置首位管理员账号。" : "仅接受经本机初始化的项目管理员账号。"}</p>{error && <p className="admin-error">操作未完成：{error}</p>}{bootstrapRequired ? <form onSubmit={onBootstrap}><label>管理员账号<input name="username" required minLength={3}/></label><label>显示名称（可留空）<input name="displayName"/></label><label>管理员密码<input name="password" required type="password" minLength={12}/></label><label>确认密码<input name="confirmation" required type="password" minLength={12}/></label><button>创建本地管理员</button></form> : <form onSubmit={onLogin}><label>账号<input name="username" required minLength={3}/></label><label>密码<input name="password" required type="password"/></label><button>进入管理后台</button></form>}<small>{bootstrapRequired ? "创建成功后，此初始化入口会立即关闭。" : "前台查询请返回 AskLily。"}</small></section></main>;
+}
 
 function Overview({ overview, capabilities, audit }: { overview: AdminOverview | null; capabilities: Capability[]; audit: AuditEvent[] }) {
   const metrics = overview?.metrics;

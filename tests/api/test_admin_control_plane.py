@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 from asklily_api import main
@@ -69,3 +70,26 @@ def test_only_one_project_admin_can_be_bootstrapped(tmp_path: Path) -> None:
         assert str(exc) == "local_project_admin_already_exists"
     else:
         raise AssertionError("second local project admin must be rejected")
+
+
+def test_first_run_bootstrap_is_one_time_and_migrates_existing_local_database(tmp_path: Path) -> None:
+    database = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE accounts (account_id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL, project_id TEXT NOT NULL, site_ids TEXT NOT NULL, created_at TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO accounts VALUES ('legacy-operator', 'legacy-operator', 'Legacy', 'not-a-login-hash', 'operator', 'demo-project', 'site-a', '2026-07-28T00:00:00+00:00')"
+        )
+    main.LOCAL_IDENTITIES = LocalIdentityStore(database)
+    main.AUDIT_EVENTS.clear()
+    client = TestClient(main.app)
+    assert client.get("/v1/admin/bootstrap-status").json()["bootstrap_required"] is True
+    created = client.post("/v1/admin/bootstrap", json={"username": "first-admin", "password": "safe-admin-password-123", "display_name": "First Admin"})
+    assert created.status_code == 201
+    assert created.json()["identity"]["role"] == "project-admin"
+    assert client.get("/v1/admin/bootstrap-status").json()["bootstrap_required"] is False
+    assert client.post("/v1/admin/bootstrap", json={"username": "second-admin", "password": "safe-admin-password-123"}).status_code == 409
+    with sqlite3.connect(database) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(accounts)")}
+    assert "status" in columns
