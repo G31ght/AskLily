@@ -70,7 +70,14 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 /* Long conversation lists scroll inside the rail instead of growing the page. */
 .rail { height: calc(100dvh - 1.8rem); min-height: 0; }
 .history { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.history-item { flex: 0 0 auto; }
+.history-entry { position: relative; flex: 0 0 auto; }
+.history-item { width: 100%; }
+.history-menu { position: absolute; z-index: 25; top: calc(100% + .2rem); right: .2rem; display: grid; min-width: 9rem; padding: .35rem; border: 1px solid #dfe2f5; border-radius: .8rem; background: #fffffff5; box-shadow: 0 1rem 2.5rem #25336930; }
+.history-menu button { width: 100%; padding: .55rem .65rem; border-radius: .55rem; color: #aa3030; text-align: left; }
+.history-menu button:hover { color: #8e2020; background: #fff0f1; }
+.confirm-backdrop { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 1.25rem; background: #121b4c66; backdrop-filter: blur(5px); }
+.confirm-dialog { width: min(100%, 28rem); padding: 1.45rem; border: 1px solid #ffffffb8; border-radius: 1.15rem; color: #202952; background: #fffffff2; box-shadow: 0 1.5rem 4rem #17245a55; }
+.confirm-dialog h2 { margin: .25rem 0 .65rem; }.confirm-dialog p:not(.eyebrow) { margin: 0; color: #67708f; line-height: 1.6; }.confirm-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: 1.35rem; }.confirm-actions button { padding: .6rem .8rem; border-radius: .65rem; color: #5360c9; background: #eeefff; }.confirm-actions .danger { color: #fff; background: #c84d59; }.confirm-actions .danger:hover { background: #ae3b47; }.confirm-actions button:disabled { cursor: wait; opacity: .65; }
 @media (max-width: 780px) { .rail { height: auto; } }
 
 /* Responsive layout contract: never compress the workbench into an unreadable third column. */

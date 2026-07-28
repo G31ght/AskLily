@@ -23,7 +23,11 @@ function App() {
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [frontAuthRequired, setFrontAuthRequired] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
+  const [conversationPendingDeletion, setConversationPendingDeletion] = useState<Conversation | null>(null);
+  const [deletingConversation, setDeletingConversation] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const historyMenuRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -54,12 +58,22 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [welcomeStage]);
   useEffect(() => {
-    if (!accountMenuOpen) return;
-    const close = (event: MouseEvent) => { if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setAccountMenuOpen(false); };
+    if (!accountMenuOpen && !conversationMenuId) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (accountMenuRef.current?.contains(target) || historyMenuRef.current?.contains(target)) return;
+      setAccountMenuOpen(false); setConversationMenuId(null);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setAccountMenuOpen(false); setConversationMenuId(null); } };
     window.addEventListener("mousedown", close); window.addEventListener("keydown", escape);
     return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", escape); };
-  }, [accountMenuOpen]);
+  }, [accountMenuOpen, conversationMenuId]);
+  useEffect(() => {
+    if (!conversationPendingDeletion || deletingConversation) return;
+    const dismiss = (event: KeyboardEvent) => { if (event.key === "Escape") setConversationPendingDeletion(null); };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [conversationPendingDeletion, deletingConversation]);
 
   function showError(reason: unknown) { setError(reason instanceof ApiFailure ? reason.code : "api_unavailable"); }
   function refreshHistory() { void platformApi.conversations().then((value) => setConversations(value.conversations)).catch(showError); }
@@ -96,6 +110,19 @@ function App() {
       setConversationId(conversation.conversation_id); setChat(null); setSavedMessages(conversation.messages); setQuestion(""); setWorkMode(false);
     }).catch(showError);
   }
+  function requestConversationDeletion(item: Conversation) {
+    setConversationMenuId(null); setConversationPendingDeletion(item);
+  }
+  function deleteConversation() {
+    const target = conversationPendingDeletion;
+    if (!target || deletingConversation) return;
+    setDeletingConversation(true); setError(null);
+    void platformApi.deleteConversation(target.conversation_id).then(() => {
+      setConversations((current) => current.filter((item) => item.conversation_id !== target.conversation_id));
+      if (conversationId === target.conversation_id) newChat();
+      setConversationPendingDeletion(null);
+    }).catch(showError).finally(() => setDeletingConversation(false));
+  }
 
   if (loading) return <main className="loading">正在准备受限 Fixture 工作台…</main>;
   if (frontAuthRequired && !identity) return <LoginForm bootstrapRequired={bootstrapRequired} error={error} onBootstrap={bootstrapProject} onSubmit={authenticate} />;
@@ -107,7 +134,7 @@ function App() {
       <div className="rail-top"><div className="brand"><span>◉</span><span className="rail-copy">AskLily</span></div><button className="rail-toggle" type="button" aria-label={compactRail ? "展开工具栏" : "收起工具栏"} aria-pressed={compactRail} onClick={() => setRailCollapsed((value) => !value)}>{compactRail ? "›" : "‹"}</button></div>
       <button className="new" onClick={newChat}><span aria-hidden="true">+</span><span className="new-label rail-copy">新建对话</span></button>
       <p className="rail-title">最近对话</p>
-      <div className="history">{conversations.length ? conversations.map((item) => <button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} key={item.conversation_id} onClick={() => openConversation(item.conversation_id)}><span className="history-icon" aria-hidden="true">◫</span><span className="history-title rail-copy">{item.title}</span><small className="history-time rail-copy">{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>) : <p className="muted rail-copy">暂无已保存对话</p>}</div>
+      <div className="history">{conversations.length ? conversations.map((item) => <div className="history-entry" key={item.conversation_id} ref={conversationMenuId === item.conversation_id ? historyMenuRef : null}><button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} onClick={() => openConversation(item.conversation_id)} onContextMenu={(event) => { event.preventDefault(); setAccountMenuOpen(false); setConversationMenuId(item.conversation_id); }}><span className="history-icon" aria-hidden="true">◫</span><span className="history-title rail-copy">{item.title}</span><small className="history-time rail-copy">{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>{conversationMenuId === item.conversation_id && <div className="history-menu" role="menu" aria-label="对话操作"><button role="menuitem" onClick={() => requestConversationDeletion(item)}>删除对话</button></div>}</div>) : <p className="muted rail-copy">暂无已保存对话</p>}</div>
       <div className="account" ref={accountMenuRef}><button className="account-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)} onContextMenu={(event) => { event.preventDefault(); setAccountMenuOpen(true); }}><span className="avatar">{(identity?.display_name ?? session.identity.display_name).slice(0, 1).toUpperCase()}</span><span className="account-details rail-copy">{identity?.display_name ?? session.identity.display_name}<small>{session.identity.role} · 本地账号</small></span></button>{accountMenuOpen && <div className="account-menu" role="menu">{session.identity.role === "project-admin" && ADMIN_PATH && <button role="menuitem" onClick={() => { if (ADMIN_PATH) window.location.assign(ADMIN_PATH); }}>管理后台</button>}<button role="menuitem" onClick={() => { setAccountMenuOpen(false); signOut(); }}>退出</button></div>}</div>
     </aside>
     <section className={!chat && !savedMessages.length ? "conversation idle" : "conversation"}>
@@ -117,6 +144,7 @@ function App() {
       <form className="composer" onSubmit={submitChat}><textarea aria-label="向 AskLily 提问" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="向 AskLily 提问…"/><button type="submit">↑</button></form>
     </section>
     {opticHealth && <section className="workbench" aria-label="Work Mode" aria-hidden={!workMode}><header><span>工作台 / Work Mode</span><span className="badge">严格只读 · Fixture</span></header><WorkspaceModules modules={chat?.presentation.modules ?? [{ module_id: "optic-health-overview", view_id: "optic_health" }]} query={opticHealth} /></section>}
+    {conversationPendingDeletion && <div className="confirm-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-conversation-title"><p className="eyebrow">对话操作</p><h2 id="delete-conversation-title">删除这段对话？</h2><p>“{conversationPendingDeletion.title}”及其消息将从当前账号的本地记录中移除，且无法恢复。</p><div className="confirm-actions"><button type="button" disabled={deletingConversation} onClick={() => setConversationPendingDeletion(null)}>取消</button><button className="danger" type="button" disabled={deletingConversation} onClick={deleteConversation}>{deletingConversation ? "正在删除…" : "确认删除"}</button></div></section></div>}
   </main>;
 }
 
