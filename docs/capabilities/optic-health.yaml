@@ -5,7 +5,8 @@ capability:
   owner: optic-health
   version: 1.0.0
   verification_status: demo_candidate
-  profile: developer
+  data_source_ids:
+    - fixture-optic-health-l0-l1
 contracts:
   api: 1.0.0
   tool: 1.0.0

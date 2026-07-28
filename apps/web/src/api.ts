@@ -6,11 +6,31 @@ export type Scope = {
   actions: string[];
 };
 
+export type DataSourceState = {
+  source_id: string;
+  kind: "fixture" | "zabbix" | "prometheus";
+  enabled: boolean;
+  read_only: boolean;
+  data_level: "L0_L1" | "unverified";
+  declared_environment: "fixture" | "test" | "production";
+  visible_site_ids: string[];
+  connection_state: "ready" | "disabled" | "unavailable";
+  reason_code: string | null;
+  last_checked_at: string | null;
+  config_revision: string;
+};
+
+export type RuntimeContext = {
+  schema_version: string;
+  declared_environment: "fixture" | "test" | "production";
+  data_sources: DataSourceState[];
+};
+
 export type Session = {
   request_id: string;
   identity: { role: string; display_name: string; authenticated: boolean };
   scope: Scope;
-  profile: "developer" | "standalone";
+  runtime: RuntimeContext;
 };
 
 export type Capability = {
@@ -18,7 +38,7 @@ export type Capability = {
   version: string;
   owner: string;
   status: string;
-  profile: string;
+  data_source_ids: string[];
   tool_ids: string[];
   view_ids: string[];
   limitations: string[];
@@ -56,7 +76,7 @@ export type LocalIdentity = { account_id: string; username: string; display_name
 export type AdminOverview = { metrics: { capability_total: number; capability_enabled: number; capability_disabled: number; account_total: number; account_active: number; audit_event_total: number } };
 export type AdminAccount = { account_id: string; username: string; display_name: string; role: string; project_id: string; site_ids: string[]; status: "active" | "disabled"; created_at: string };
 export type AuditEvent = { event_id: string; occurred_at: string; actor_id: string; action: string; outcome: string; request_id: string; query_id: string | null; scope_project_id: string; tool_id: string | null; reason_code: string | null };
-export type AdminSystem = { profile: string; data_level: string; read_only: boolean; configuration_schema: string; limitations: string[] };
+export type AdminSystem = { runtime: RuntimeContext; persisted_data_source_status: Array<Omit<DataSourceState, "enabled" | "read_only" | "visible_site_ids" | "last_checked_at"> & { observed_at: string }>; read_only: boolean; configuration_schema: string; limitations: string[] };
 export type AdminBootstrapStatus = { bootstrap_required: boolean };
 
 export type Health = "healthy" | "critical" | "warning" | "recovered" | "unknown";

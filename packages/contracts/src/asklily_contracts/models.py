@@ -167,7 +167,7 @@ class CapabilityManifest:
     version: str
     owner: str
     status: str
-    profile: str
+    data_source_ids: tuple[str, ...]
     tool_ids: tuple[str, ...]
     view_ids: tuple[str, ...]
     limitations: tuple[str, ...]

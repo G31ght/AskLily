@@ -24,12 +24,13 @@ from asklily_domain import (
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import JSONResponse
 
 from .local_identity import IdentityError, LocalIdentity, LocalIdentityStore, default_database_path
-from .runtime import runtime_profile
+from .runtime import DataSource, load_runtime_config
 
-RUNTIME_PROFILE = runtime_profile()
-app = FastAPI(title="AskLily P2 Optic Health API", version="0.2.0")
+RUNTIME_CONFIG = load_runtime_config()
+app = FastAPI(title="AskLily Unified Runtime API", version="0.6.0")
 
 OPTIC_TOOL_ID = "optic_health.query"
 OPTIC_VIEW_ID = "optic_health"
@@ -105,7 +106,7 @@ class AdminAccountCreateInput(LocalAccountInput):
     site_ids: set[str] = Field(min_length=1, max_length=100)
 
 
-DEVELOPMENT_IDENTITIES: dict[str, tuple[str, Scope]] = {
+FIXTURE_IDENTITIES: dict[str, tuple[str, Scope]] = {
     "project-admin": (
         "Project Admin",
         Scope("demo-project", frozenset({"site-a", "site-b"}), actions=frozenset({"read"})),
@@ -129,7 +130,7 @@ REGISTRY.register_capability(
         "1.0.0",
         "platform",
         "verified_skeleton",
-        RUNTIME_PROFILE,
+        (),
         ("platform.status",),
         ("platform_status",),
         ("no_business_capability", "no_real_data", "no_model_provider"),
@@ -143,7 +144,7 @@ REGISTRY.register_capability(
         "1.0.0",
         "optic-health",
         "demo_candidate",
-        RUNTIME_PROFILE,
+        tuple(item.source_id for item in RUNTIME_CONFIG.sources if "optic-health" in item.capability_ids),
         (OPTIC_TOOL_ID,),
         (OPTIC_VIEW_ID,),
         ("fixture_l0_l1_only", "no_real_connector", "no_write_operation"),
@@ -159,6 +160,15 @@ def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "missing-request-id")
 
 
+@app.exception_handler(IdentityError)
+async def identity_storage_failure(request: Request, exc: IdentityError) -> JSONResponse:
+    """Do not continue with stale or partially written local control-plane state."""
+    request_id = _request_id(request)
+    code = str(exc)
+    status = 503 if code.startswith("local_storage_") else 500
+    return JSONResponse(status_code=status, content={"detail": {"code": code, "request_id": request_id}})
+
+
 @app.middleware("http")
 async def attach_request_id(request: Request, call_next: RequestResponseEndpoint) -> Response:
     request.state.request_id = request.headers.get("X-Request-ID", str(uuid4()))
@@ -169,10 +179,10 @@ async def attach_request_id(request: Request, call_next: RequestResponseEndpoint
 
 def _identity(role: str, request_id: str) -> tuple[str, Scope]:
     try:
-        return DEVELOPMENT_IDENTITIES[role]
+        return FIXTURE_IDENTITIES[role]
     except KeyError as exc:
-        _audit(role, "session.resolve", "denied", request_id, Scope("unknown"), reason="unknown_development_role")
-        raise HTTPException(401, detail={"code": "unknown_development_role", "request_id": request_id}) from exc
+        _audit(role, "session.resolve", "denied", request_id, Scope("unknown"), reason="unknown_fixture_role")
+        raise HTTPException(401, detail={"code": "unknown_fixture_role", "request_id": request_id}) from exc
 
 
 def _local_identity(request: Request, request_id: str) -> LocalIdentity | None:
@@ -182,7 +192,8 @@ def _local_identity(request: Request, request_id: str) -> LocalIdentity | None:
     try:
         return LOCAL_IDENTITIES.resolve_session(token)
     except IdentityError as exc:
-        raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
+        status = 503 if str(exc).startswith("local_storage_") else 401
+        raise HTTPException(status, detail={"code": str(exc), "request_id": request_id}) from exc
 
 
 def _request_identity(request: Request, role: str, request_id: str) -> tuple[str, Scope, LocalIdentity | None]:
@@ -241,6 +252,34 @@ def _require_capability_enabled(capability_id: str, actor: str, scope: Scope, re
         raise HTTPException(409, detail={"code": "capability_disabled", "request_id": request_id})
 
 
+def _data_source_states(scope: Scope | None = None) -> list[dict[str, object]]:
+    full_states = [item.public_state() for item in RUNTIME_CONFIG.sources]
+    for state in full_states:
+        LOCAL_IDENTITIES.record_data_source_state(state)
+    allowed_sites = scope.site_ids if scope is not None and scope.site_ids else None
+    return [item.public_state(allowed_sites) for item in RUNTIME_CONFIG.sources]
+
+
+def _source_for_capability(capability_id: str, actor: str, scope: Scope, request_id: str) -> tuple[DataSource, Scope]:
+    source = RUNTIME_CONFIG.source_for_capability(capability_id)
+    if source is None:
+        _audit(actor, f"{capability_id}.source", "denied", request_id, scope, reason="data_source_not_configured")
+        raise HTTPException(503, detail={"code": "data_source_not_configured", "request_id": request_id})
+    state = source.public_state()
+    LOCAL_IDENTITIES.record_data_source_state(state)
+    if not source.enabled:
+        _audit(actor, f"{capability_id}.source", "denied", request_id, scope, reason="data_source_disabled")
+        raise HTTPException(409, detail={"code": "data_source_disabled", "request_id": request_id})
+    if source.kind != "fixture" or state["connection_state"] != "ready":
+        _audit(actor, f"{capability_id}.source", "denied", request_id, scope, reason="data_source_unavailable")
+        raise HTTPException(503, detail={"code": "data_source_unavailable", "request_id": request_id})
+    source_sites = source.visible_site_ids if not scope.site_ids else source.visible_site_ids & scope.site_ids
+    if not source_sites:
+        _audit(actor, f"{capability_id}.source", "denied", request_id, scope, reason="data_source_scope_not_allowed")
+        raise HTTPException(403, detail={"code": "data_source_scope_not_allowed", "request_id": request_id})
+    return source, Scope(scope.project_id, source_sites, scope.cluster_ids, scope.resource_types, scope.actions)
+
+
 def _narrow(server_scope: Scope, requested: Scope | None, role: str, request_id: str, action: str) -> Scope:
     try:
         return server_scope if requested is None else server_scope.narrowed_to(requested)
@@ -266,13 +305,14 @@ def _run_optic_query(
     focus_resource_id: str | None = None,
 ) -> OpticHealthQuery:
     _require_capability_enabled("optic-health", role, scope, request_id)
+    _, source_scope = _source_for_capability("optic-health", role, scope, request_id)
     try:
         REGISTRY.authorize_tool(OPTIC_TOOL_ID, scope)
     except ContractViolation as exc:
         _audit(role, "optic_health.query", "denied", request_id, scope, tool_id=OPTIC_TOOL_ID, reason=str(exc))
         raise HTTPException(403, detail={"code": str(exc), "request_id": request_id}) from exc
     result = query_optic_health(
-        scope,
+        source_scope,
         health_filter=health_filter,
         search=search.casefold() if search else None,
         focus_resource_id=focus_resource_id,
@@ -300,8 +340,12 @@ def _default_presentation() -> dict[str, object]:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "profile": RUNTIME_PROFILE, "data": "fixture_l0_l1", "rule_version": OPTIC_RULE_VERSION}
+def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "runtime": _runtime_dict(),
+        "rule_version": OPTIC_RULE_VERSION,
+    }
 
 
 @app.post("/v1/auth/login")
@@ -311,7 +355,8 @@ def login_local_account(payload: LocalLoginInput, request: Request, response: Re
         identity = LOCAL_IDENTITIES.authenticate(payload.username, payload.password)
         token = LOCAL_IDENTITIES.issue_session(identity.account_id)
     except IdentityError as exc:
-        raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
+        status = 503 if str(exc).startswith("local_storage_") else 401
+        raise HTTPException(status, detail={"code": str(exc), "request_id": request_id}) from exc
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
     _audit(identity.account_id, "local_account.login", "allowed", request_id, identity.scope)
     return {"request_id": request_id, "identity": _local_identity_dict(identity)}
@@ -333,7 +378,7 @@ def bootstrap_local_project_admin(payload: LocalAdminBootstrapInput, request: Re
         token = LOCAL_IDENTITIES.issue_session(identity.account_id)
     except IdentityError as exc:
         code = str(exc)
-        status = 409 if code == "local_project_admin_already_exists" else 400
+        status = 503 if code.startswith("local_storage_") else 409 if code == "local_project_admin_already_exists" else 400
         raise HTTPException(status, detail={"code": code, "request_id": request_id}) from exc
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=request.url.scheme == "https", max_age=int(12 * 60 * 60))
     _audit(identity.account_id, "local_project_admin.bootstrap", "allowed", request_id, identity.scope)
@@ -358,7 +403,8 @@ def delete_local_account(payload: AccountDeletionInput, request: Request, respon
     try:
         LOCAL_IDENTITIES.delete_account(identity, payload.password)
     except IdentityError as exc:
-        raise HTTPException(401, detail={"code": str(exc), "request_id": request_id}) from exc
+        status = 503 if str(exc).startswith("local_storage_") else 401
+        raise HTTPException(status, detail={"code": str(exc), "request_id": request_id}) from exc
     response.delete_cookie(SESSION_COOKIE)
     _audit(identity.account_id, "local_account.delete", "allowed", request_id, identity.scope)
     return {"request_id": request_id, "status": "account_deleted"}
@@ -368,14 +414,14 @@ def delete_local_account(payload: AccountDeletionInput, request: Request, respon
 def session(request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
     request_id = _request_id(request)
     actor, scope, local = _request_identity(request, x_asklily_role, request_id)
-    display_name = local.display_name if local is not None else DEVELOPMENT_IDENTITIES[x_asklily_role][0]
+    display_name = local.display_name if local is not None else FIXTURE_IDENTITIES[x_asklily_role][0]
     role = local.role if local is not None else x_asklily_role
     _audit(actor, "session.read", "allowed", request_id, scope)
     return {
         "request_id": request_id,
         "identity": {"role": role, "display_name": display_name, "authenticated": local is not None},
         "scope": _scope_dict(scope),
-        "profile": RUNTIME_PROFILE,
+        "runtime": _runtime_dict(scope),
     }
 
 
@@ -385,6 +431,14 @@ def capabilities(request: Request, x_asklily_role: str = Header(default="operato
     actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
     _audit(actor, "capability_catalog.read", "allowed", request_id, scope)
     return {"request_id": request_id, "capabilities": [_manifest_dict(item) for item in REGISTRY.capabilities.values()]}
+
+
+@app.get("/v1/data-sources")
+def data_sources(request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
+    request_id = _request_id(request)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    _audit(actor, "data_source_catalog.read", "allowed", request_id, scope)
+    return {"request_id": request_id, "runtime": _runtime_dict(scope)}
 
 
 @app.post("/v1/tools/{tool_id}/authorize")
@@ -457,6 +511,9 @@ def validate_view_context(
     except ContractViolation as exc:
         _audit(actor, "view.validate", "denied", request_id, server_scope, reason=str(exc))
         raise HTTPException(403, detail={"code": str(exc), "request_id": request_id}) from exc
+    if payload.view_id == OPTIC_VIEW_ID:
+        _, data_source_scope = _source_for_capability("optic-health", actor, context.scope, request_id)
+        context = ViewContext(context.view_id, context.version, data_source_scope, context.filters, context.focus_resource_id, context.query_id)
     _audit(actor, "view.validate", "allowed", request_id, context.scope)
     return {"request_id": request_id, "view_context": _view_dict(context)}
 
@@ -653,10 +710,10 @@ def admin_system(request: Request) -> dict[str, object]:
     _audit(identity.account_id, "admin.system.read", "allowed", request_id, identity.scope)
     return {
         "request_id": request_id,
-        "profile": RUNTIME_PROFILE,
-        "data_level": "fixture_l0_l1",
+        "runtime": _runtime_dict(identity.scope),
+        "persisted_data_source_status": LOCAL_IDENTITIES.list_data_source_status(),
         "read_only": True,
-        "configuration_schema": "none_registered",
+        "configuration_schema": "data-source-registry/1.0.0",
         "limitations": ["no_real_connector", "no_model_provider", "no_write_operation"],
     }
 
@@ -668,6 +725,14 @@ def _scope_dict(scope: Scope) -> dict[str, object]:
         "cluster_ids": sorted(scope.cluster_ids),
         "resource_types": sorted(scope.resource_types),
         "actions": sorted(scope.actions),
+    }
+
+
+def _runtime_dict(scope: Scope | None = None) -> dict[str, object]:
+    return {
+        "schema_version": RUNTIME_CONFIG.schema_version,
+        "declared_environment": RUNTIME_CONFIG.deployment_environment,
+        "data_sources": _data_source_states(scope),
     }
 
 
@@ -692,7 +757,7 @@ def _manifest_dict(manifest: CapabilityManifest) -> dict[str, object]:
         "version": manifest.version,
         "owner": manifest.owner,
         "status": manifest.status,
-        "profile": manifest.profile,
+        "data_source_ids": list(manifest.data_source_ids),
         "tool_ids": list(manifest.tool_ids),
         "view_ids": list(manifest.view_ids),
         "limitations": list(manifest.limitations),

@@ -1,4 +1,4 @@
-# P1 registered capability: developer-profile metadata only. This manifest
+# P1 registered capability: unified runtime metadata only. This manifest
 # does not identify or connect to any business system or data source.
 capability:
   id: platform-foundation
@@ -6,7 +6,7 @@ capability:
   owner: platform
   version: 1.0.0
   verification_status: verified_skeleton
-  profile: developer
+  data_source_ids: []
 contracts:
   api: 1.0.0
   tool: 1.0.0

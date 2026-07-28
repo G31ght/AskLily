@@ -66,11 +66,26 @@ AskLily 是面向 GPU 数据中心及相关运维环境的 AI 驱动运维平台
 | P2 光模块纵向切片 | 已关闭 | Fixture / Scenario 驱动的 Demo 能力。 |
 | P3 Zabbix 只读预备 | 已关闭且 L4 延期 | Mock 预备与真实只读数据处理边界；未完成真实 L4。 |
 | P4 Standalone 硬化 | 已关闭 | 受控单机无状态 Compose Profile；非 Production。 |
-| P5 能力扩展 | 已形成冻结检查点 | P5A 前台、P5B 本地账号历史与 P5D 本机控制面已在 `efd5dc1` 冻结；尚未独立绿色结项或合并。 |
-| P6 统一运行时与数据源架构收敛 | 已授权接手核验与方案 | 统一 Compose、持久化边界与数据源状态模型；实现须在 Project Lead 只读方案获批后开始。 |
+| P5 能力扩展 | 可继续，逐项审批 | P5A 前台、P5B 本地账号历史与 P5D 本机控制面已由 P6 纳入统一运行基线；新的 Capability 必须独立 Brief、任务协议与验收。 |
+| P6 统一运行时与数据源架构收敛 | 已关闭并获接受 | 统一 Compose、持久化边界与数据源状态模型已完成独立验收；不开放真实 Connector、L4 或 Production。 |
 | Production/商业化工程 | 暂停 | HA、Kubernetes、容量、灾备和 Production SLA 仍仅在商业化、工程化和容量证据出现后单独立项。 |
 
 P3 的真实 Zabbix L4 仍延期。它只能在项目负责人提供专用只读环境、最小 Scope 和单次授权后，依照 [ADR-0003](../adr/0003-zabbix-live-readonly-data-handling.md) 与 [P3 L4 Runbook](../runbooks/P3-zabbix-l4-readonly-runbook.md) 执行；不得把 P2 或 P4 的结果表述为真实 Connector 验证。
+
+## P6 统一运行时目标架构
+
+```mermaid
+flowchart LR
+    User["本地浏览器"] --> Web["Web: loopback only"]
+    Web --> API["API: unified runtime"]
+    API --> Registry["Read-only source registry"]
+    API --> State["SQLite control plane\naccounts, history, audit, source status"]
+    Registry --> Fixture["Explicit Fixture L0/L1"]
+    Registry -. "future approved only" .-> Real["Zabbix / Prometheus\nread-only, unverified in P6"]
+    API -. "never persist" .-> Facts["Monitoring facts remain upstream\nno raw observations/events in SQLite"]
+```
+
+`fixture`、`test`、`production` 是客户在注册表中声明的来源上下文，而非 Compose、镜像或前端版本。没有已启用且可用的来源时，业务 Capability 失败关闭；不会展示 Fixture 作为替代结果。
 
 ## 工程与协作规则
 
@@ -89,4 +104,4 @@ Program Phase II 是 P0-P4 后的产品成熟化与能力横向扩展计划，�
 2. 可复用的平台共性能力补齐。
 3. 一项一项的业务能力纵向切片。
 
-P5 已冻结；其继续扩展必须等待 [P6 统一运行时与数据源架构收敛任务书](../governance/P6-unified-runtime-architecture-convergence-project-lead-task.md) 完成并验收。历史的 [Program Phase II 任务书](../governance/program-phase-ii-project-lead-task.md) 仍记录 P0-P4 后的原始接手要求，但不再授权新增 P5 工作。
+P6 已关闭并解除 P5 冻结。P5 的后续扩展仍须先获得单独的 Capability Brief、任务协议和验收授权；历史的 [Program Phase II 任务书](../governance/program-phase-ii-project-lead-task.md) 仍记录 P0-P4 后的原始接手要求，不构成对任意新能力的自动授权。

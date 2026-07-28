@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import sqlite3
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -51,11 +52,17 @@ class LocalIdentityStore:
         self._path = database_path
 
     def initialize(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
-            connection.executescript(
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._path.parent.chmod(0o700)
+            with self._connect() as connection:
+                connection.executescript(
                 """
                 PRAGMA foreign_keys = ON;
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS accounts (
                     account_id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
@@ -109,11 +116,77 @@ class LocalIdentityStore:
                     updated_by TEXT NOT NULL
                 );
                 """
-            )
-            account_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(accounts)")}
-            if "status" not in account_columns:
-                connection.execute("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
-            connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_project_admin ON accounts(role) WHERE role = 'project-admin'")
+                )
+                account_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(accounts)")}
+                if "status" not in account_columns:
+                    connection.execute("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+                connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_project_admin ON accounts(role) WHERE role = 'project-admin'")
+                connection.execute("INSERT OR IGNORE INTO schema_migrations VALUES (1, ?)", (_now(),))
+                if connection.execute("SELECT 1 FROM schema_migrations WHERE version = 2").fetchone() is None:
+                    connection.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS data_source_status (
+                            source_id TEXT PRIMARY KEY,
+                            kind TEXT NOT NULL,
+                            declared_environment TEXT NOT NULL,
+                            data_level TEXT NOT NULL,
+                            connection_state TEXT NOT NULL,
+                            reason_code TEXT,
+                            config_revision TEXT NOT NULL,
+                            observed_at TEXT NOT NULL
+                        )
+                        """
+                    )
+                    connection.execute("INSERT INTO schema_migrations VALUES (2, ?)", (_now(),))
+                integrity = connection.execute("PRAGMA quick_check").fetchone()
+                if integrity is None or str(integrity[0]) != "ok":
+                    raise IdentityError("local_storage_integrity_check_failed")
+            self._path.chmod(0o600)
+        except (OSError, sqlite3.Error) as exc:
+            raise IdentityError("local_storage_unavailable") from exc
+
+    def record_data_source_state(self, state: Mapping[str, object]) -> None:
+        """Persist control-plane status only; monitoring records never enter SQLite."""
+        self.initialize()
+        required = ("source_id", "kind", "declared_environment", "data_level", "connection_state", "config_revision")
+        if any(not isinstance(state.get(item), str) or not state[item] for item in required):
+            raise IdentityError("data_source_state_invalid")
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO data_source_status (
+                        source_id, kind, declared_environment, data_level, connection_state,
+                        reason_code, config_revision, observed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_id) DO UPDATE SET
+                        kind = excluded.kind,
+                        declared_environment = excluded.declared_environment,
+                        data_level = excluded.data_level,
+                        connection_state = excluded.connection_state,
+                        reason_code = excluded.reason_code,
+                        config_revision = excluded.config_revision,
+                        observed_at = excluded.observed_at
+                    """,
+                    (
+                        state["source_id"], state["kind"], state["declared_environment"], state["data_level"],
+                        state["connection_state"], state.get("reason_code"), state["config_revision"], _now(),
+                    ),
+                )
+        except sqlite3.Error as exc:
+            raise IdentityError("local_storage_unavailable") from exc
+
+    def list_data_source_status(self) -> list[dict[str, str | None]]:
+        self.initialize()
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """SELECT source_id, kind, declared_environment, data_level, connection_state,
+                    reason_code, config_revision, observed_at FROM data_source_status ORDER BY source_id"""
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise IdentityError("local_storage_unavailable") from exc
+        return [dict(row) for row in rows]
 
     def project_admin_exists(self) -> bool:
         self.initialize()

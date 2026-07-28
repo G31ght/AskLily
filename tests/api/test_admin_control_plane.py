@@ -112,3 +112,5 @@ def test_first_run_bootstrap_is_one_time_and_migrates_existing_local_database(tm
     with sqlite3.connect(database) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(accounts)")}
     assert "status" in columns
+    assert database.stat().st_mode & 0o777 == 0o600
+    assert database.parent.stat().st_mode & 0o777 == 0o700

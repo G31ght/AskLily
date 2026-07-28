@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "deployment": {
+    "declared_environment": "fixture"
+  },
+  "sources": [
+    {
+      "source_id": "fixture-optic-health-l0-l1",
+      "kind": "fixture",
+      "enabled": true,
+      "read_only": true,
+      "data_level": "L0_L1",
+      "capability_ids": ["optic-health"],
+      "visible_site_ids": ["site-a", "site-b"],
+      "config_revision": "fixture-v1"
+    }
+  ]
+}
