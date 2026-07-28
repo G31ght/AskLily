@@ -222,24 +222,64 @@ function portraitTargets(width: number, height: number) {
   const source = document.createElement("canvas");
   source.width = Math.max(1, Math.floor(width)); source.height = Math.max(1, Math.floor(height));
   const context = source.getContext("2d")!;
-  context.strokeStyle = "#ffffff"; context.fillStyle = "#ffffff"; context.lineWidth = Math.max(1.2, width / 720);
-  const centerX = width * .57; const top = height * .16;
-  context.globalAlpha = .34;
-  context.beginPath(); context.ellipse(centerX - width * .055, top + height * .28, width * .09, height * .19, -.18, 0, Math.PI * 2); context.fill();
-  context.beginPath(); context.moveTo(centerX - width * .11, top + height * .58); context.quadraticCurveTo(centerX - width * .18, top + height * .78, centerX - width * .27, top + height * .86); context.quadraticCurveTo(centerX + width * .08, top + height * .75, centerX + width * .2, top + height * .94); context.lineTo(centerX + width * .08, top + height * .7); context.closePath(); context.fill();
+  context.strokeStyle = "#ffffff"; context.fillStyle = "#ffffff"; context.lineCap = "round"; context.lineJoin = "round";
+  context.lineWidth = Math.max(1.1, width / 880);
+  const centerX = width * .55; const top = height * .105;
+
+  // A softly filled head-and-shoulders silhouette gives the particles a legible
+  // human form, while the fine strokes below preserve the airy particle look.
+  context.globalAlpha = .22;
+  context.beginPath();
+  context.moveTo(centerX + width * .055, top + height * .01);
+  context.bezierCurveTo(centerX - width * .075, top - height * .025, centerX - width * .17, top + height * .08, centerX - width * .13, top + height * .22);
+  context.bezierCurveTo(centerX - width * .145, top + height * .27, centerX - width * .16, top + height * .31, centerX - width * .19, top + height * .35);
+  context.bezierCurveTo(centerX - width * .155, top + height * .37, centerX - width * .172, top + height * .395, centerX - width * .192, top + height * .42);
+  context.bezierCurveTo(centerX - width * .16, top + height * .432, centerX - width * .178, top + height * .46, centerX - width * .16, top + height * .49);
+  context.bezierCurveTo(centerX - width * .13, top + height * .53, centerX - width * .09, top + height * .555, centerX - width * .055, top + height * .575);
+  context.bezierCurveTo(centerX - width * .04, top + height * .655, centerX - width * .13, top + height * .72, centerX - width * .205, top + height * .84);
+  context.bezierCurveTo(centerX - width * .075, top + height * .815, centerX + width * .035, top + height * .75, centerX + width * .13, top + height * .92);
+  context.bezierCurveTo(centerX + width * .19, top + height * .72, centerX + width * .13, top + height * .57, centerX + width * .09, top + height * .45);
+  context.bezierCurveTo(centerX + width * .12, top + height * .24, centerX + width * .12, top + height * .08, centerX + width * .055, top + height * .01);
+  context.closePath(); context.fill();
+
   context.globalAlpha = 1;
+  // Profile contour: crown, forehead, nose, lips, chin, throat and shoulder.
   context.beginPath();
-  context.moveTo(centerX, top); context.bezierCurveTo(centerX - width * .13, top + height * .02, centerX - width * .15, top + height * .23, centerX - width * .08, top + height * .35);
-  context.bezierCurveTo(centerX - width * .025, top + height * .42, centerX - width * .02, top + height * .55, centerX - width * .09, top + height * .69); context.stroke();
-  context.beginPath();
-  context.moveTo(centerX, top); context.bezierCurveTo(centerX + width * .12, top + height * .12, centerX + width * .12, top + height * .38, centerX + width * .28, top + height * .72); context.stroke();
-  context.beginPath();
-  context.moveTo(centerX - width * .07, top + height * .3); context.lineTo(centerX + width * .02, top + height * .29); context.lineTo(centerX - width * .04, top + height * .34); context.lineTo(centerX + width * .02, top + height * .38); context.stroke();
-  for (let index = 0; index < 15; index += 1) {
-    const offset = seeded(index, 8) * width * .23; const vertical = top + seeded(index, 9) * height * .58;
-    context.beginPath(); context.moveTo(centerX + width * .03, top + height * .08 + index * height * .026); context.quadraticCurveTo(centerX + width * .12 + offset, vertical, centerX + width * (.2 + seeded(index, 10) * .3), vertical + height * .1); context.stroke();
+  context.moveTo(centerX + width * .052, top + height * .012);
+  context.bezierCurveTo(centerX - width * .07, top - height * .02, centerX - width * .15, top + height * .09, centerX - width * .125, top + height * .22);
+  context.bezierCurveTo(centerX - width * .14, top + height * .275, centerX - width * .16, top + height * .315, centerX - width * .19, top + height * .35);
+  context.bezierCurveTo(centerX - width * .15, top + height * .37, centerX - width * .176, top + height * .4, centerX - width * .192, top + height * .423);
+  context.bezierCurveTo(centerX - width * .155, top + height * .432, centerX - width * .176, top + height * .462, centerX - width * .158, top + height * .49);
+  context.bezierCurveTo(centerX - width * .122, top + height * .535, centerX - width * .08, top + height * .558, centerX - width * .055, top + height * .575);
+  context.bezierCurveTo(centerX - width * .04, top + height * .66, centerX - width * .125, top + height * .73, centerX - width * .205, top + height * .84);
+  context.bezierCurveTo(centerX - width * .07, top + height * .81, centerX + width * .04, top + height * .75, centerX + width * .13, top + height * .92);
+  context.stroke();
+
+  // Facial landmarks make the profile recognizable without becoming photorealistic.
+  context.lineWidth *= .82;
+  context.beginPath(); context.moveTo(centerX - width * .135, top + height * .277); context.quadraticCurveTo(centerX - width * .103, top + height * .258, centerX - width * .075, top + height * .279); context.stroke();
+  context.beginPath(); context.moveTo(centerX - width * .128, top + height * .305); context.quadraticCurveTo(centerX - width * .104, top + height * .322, centerX - width * .082, top + height * .304); context.stroke();
+  context.beginPath(); context.moveTo(centerX - width * .16, top + height * .378); context.quadraticCurveTo(centerX - width * .122, top + height * .39, centerX - width * .148, top + height * .407); context.stroke();
+  context.beginPath(); context.moveTo(centerX - width * .064, top + height * .36); context.quadraticCurveTo(centerX - width * .035, top + height * .392, centerX - width * .055, top + height * .435); context.stroke();
+  context.beginPath(); context.ellipse(centerX - width * .028, top + height * .39, width * .024, height * .036, .15, 0, Math.PI * 2); context.stroke();
+  context.beginPath(); context.moveTo(centerX - width * .052, top + height * .575); context.quadraticCurveTo(centerX + width * .025, top + height * .625, centerX + width * .005, top + height * .715); context.stroke();
+
+  // Hair is deliberately directional: it makes the silhouette read as a woman
+  // and connects the portrait to the surrounding flowing particle field.
+  context.lineWidth = Math.max(.8, width / 1200);
+  for (let index = 0; index < 34; index += 1) {
+    const startY = top + height * (.03 + index * .016);
+    const lift = seeded(index, 18) * height * .18 - height * .05;
+    const endX = centerX + width * (.12 + seeded(index, 19) * .33);
+    const endY = top + height * (.17 + seeded(index, 20) * .66);
+    context.globalAlpha = .48 + seeded(index, 21) * .42;
+    context.beginPath();
+    context.moveTo(centerX + width * (.02 + seeded(index, 22) * .055), startY);
+    context.bezierCurveTo(centerX + width * (.08 + seeded(index, 23) * .12), startY + lift, endX - width * .07, endY - height * .06, endX, endY);
+    context.stroke();
   }
-  context.beginPath(); context.moveTo(centerX - width * .1, top + height * .68); context.quadraticCurveTo(centerX - width * .18, top + height * .78, centerX - width * .27, top + height * .86); context.quadraticCurveTo(centerX + width * .08, top + height * .75, centerX + width * .2, top + height * .94); context.stroke();
+  context.globalAlpha = 1;
+  context.beginPath(); context.moveTo(centerX + width * .04, top + height * .015); context.bezierCurveTo(centerX + width * .16, top + height * .18, centerX + width * .14, top + height * .43, centerX + width * .26, top + height * .7); context.stroke();
   return sampleTargets(context, source.width, source.height, 4);
 }
 
