@@ -35,6 +35,7 @@ class LocalIdentity:
     display_name: str
     role: str
     scope: Scope
+    status: str = "active"
 
 
 def default_database_path(environment: dict[str, str] | None = None) -> Path:
@@ -63,6 +64,7 @@ class LocalIdentityStore:
                     role TEXT NOT NULL,
                     project_id TEXT NOT NULL,
                     site_ids TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -88,8 +90,29 @@ class LocalIdentityStore:
                     limitation_label TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    event_id TEXT PRIMARY KEY,
+                    occurred_at TEXT NOT NULL,
+                    actor_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    query_id TEXT,
+                    scope_project_id TEXT NOT NULL,
+                    tool_id TEXT,
+                    reason_code TEXT
+                );
+                CREATE TABLE IF NOT EXISTS capability_overrides (
+                    capability_id TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+                    updated_at TEXT NOT NULL,
+                    updated_by TEXT NOT NULL
+                );
                 """
             )
+            account_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(accounts)")}
+            if "status" not in account_columns:
+                connection.execute("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
 
     def register(self, username: str, password: str, display_name: str | None = None) -> LocalIdentity:
         self.initialize()
@@ -108,9 +131,37 @@ class LocalIdentityStore:
         try:
             with self._connect() as connection:
                 connection.execute(
-                    "INSERT INTO accounts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO accounts (account_id, username, display_name, password_hash, role, project_id, site_ids, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (identity.account_id, identity.username, identity.display_name, _hash_password(password), identity.role,
                      identity.scope.project_id, ",".join(sorted(identity.scope.site_ids)), now),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise IdentityError("local_username_already_exists") from exc
+        return identity
+
+    def bootstrap_project_admin(self, username: str, password: str, display_name: str | None = None) -> LocalIdentity:
+        """Create the only local project administrator through a local command."""
+        self.initialize()
+        if not USERNAME.fullmatch(username):
+            raise IdentityError("local_username_invalid")
+        if len(password) < 12 or len(password) > 128:
+            raise IdentityError("local_password_length_invalid")
+        identity = LocalIdentity(
+            account_id=f"acct-{secrets.token_urlsafe(18)}",
+            username=username,
+            display_name=display_name.strip() if display_name and display_name.strip() else username,
+            role="project-admin",
+            scope=Scope("demo-project", frozenset({"site-a", "site-b"}), actions=frozenset({"read"})),
+        )
+        try:
+            with self._connect() as connection:
+                existing = connection.execute("SELECT 1 FROM accounts WHERE role = 'project-admin' LIMIT 1").fetchone()
+                if existing is not None:
+                    raise IdentityError("local_project_admin_already_exists")
+                connection.execute(
+                    "INSERT INTO accounts (account_id, username, display_name, password_hash, role, project_id, site_ids, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)",
+                    (identity.account_id, identity.username, identity.display_name, _hash_password(password), identity.role,
+                     identity.scope.project_id, ",".join(sorted(identity.scope.site_ids)), _now()),
                 )
         except sqlite3.IntegrityError as exc:
             raise IdentityError("local_username_already_exists") from exc
@@ -122,6 +173,8 @@ class LocalIdentityStore:
             row = connection.execute("SELECT * FROM accounts WHERE username = ?", (username,)).fetchone()
         if row is None or not _verify_password(password, str(row["password_hash"])):
             raise IdentityError("local_credentials_invalid")
+        if str(row["status"]) != "active":
+            raise IdentityError("local_account_disabled")
         return _identity_from_row(row)
 
     def issue_session(self, account_id: str) -> str:
@@ -142,6 +195,8 @@ class LocalIdentityStore:
             ).fetchone()
         if row is None:
             raise IdentityError("local_session_invalid_or_expired")
+        if str(row["status"]) != "active":
+            raise IdentityError("local_account_disabled")
         return _identity_from_row(row)
 
     def revoke_session(self, token: str) -> None:
@@ -197,6 +252,77 @@ class LocalIdentityStore:
                 raise IdentityError("local_credentials_invalid")
             connection.execute("DELETE FROM accounts WHERE account_id = ?", (identity.account_id,))
 
+    def list_accounts(self) -> list[dict[str, object]]:
+        self.initialize()
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT account_id, username, display_name, role, project_id, site_ids, status, created_at FROM accounts ORDER BY created_at"
+            ).fetchall()
+        return [{**dict(row), "site_ids": list(filter(None, str(row["site_ids"]).split(",")))} for row in rows]
+
+    def set_account_status(self, account_id: str, status: str) -> dict[str, object]:
+        if status not in {"active", "disabled"}:
+            raise IdentityError("local_account_status_invalid")
+        self.initialize()
+        with self._connect() as connection:
+            account = connection.execute("SELECT role FROM accounts WHERE account_id = ?", (account_id,)).fetchone()
+            if account is None:
+                raise IdentityError("local_account_not_found")
+            if str(account["role"]) == "project-admin":
+                raise IdentityError("local_project_admin_state_protected")
+            connection.execute("UPDATE accounts SET status = ? WHERE account_id = ?", (status, account_id))
+            if status == "disabled":
+                connection.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
+        return next(item for item in self.list_accounts() if item["account_id"] == account_id)
+
+    def revoke_account_sessions(self, account_id: str) -> None:
+        self.initialize()
+        with self._connect() as connection:
+            account = connection.execute("SELECT account_id FROM accounts WHERE account_id = ?", (account_id,)).fetchone()
+            if account is None:
+                raise IdentityError("local_account_not_found")
+            connection.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
+
+    def append_audit_event(self, event: dict[str, object]) -> None:
+        self.initialize()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event["event_id"], event["occurred_at"], event["actor_id"], event["action"], event["outcome"], event["request_id"], event["query_id"], event["scope_project_id"], event["tool_id"], event["reason_code"]),
+            )
+
+    def list_audit_events(self, limit: int = 100, action: str | None = None) -> list[dict[str, str | None]]:
+        self.initialize()
+        bounded_limit = min(max(limit, 1), 200)
+        query = "SELECT event_id, occurred_at, actor_id, action, outcome, request_id, query_id, scope_project_id, tool_id, reason_code FROM audit_events"
+        parameters: list[object] = []
+        if action:
+            query += " WHERE action = ?"
+            parameters.append(action)
+        query += " ORDER BY occurred_at DESC, rowid DESC LIMIT ?"
+        parameters.append(bounded_limit)
+        with self._connect() as connection:
+            return [dict(row) for row in connection.execute(query, parameters).fetchall()]
+
+    def audit_event_count(self) -> int:
+        self.initialize()
+        with self._connect() as connection:
+            return int(connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0])
+
+    def capability_enabled(self, capability_id: str) -> bool:
+        self.initialize()
+        with self._connect() as connection:
+            row = connection.execute("SELECT enabled FROM capability_overrides WHERE capability_id = ?", (capability_id,)).fetchone()
+        return row is None or bool(row["enabled"])
+
+    def set_capability_enabled(self, capability_id: str, enabled: bool, actor_id: str) -> None:
+        self.initialize()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO capability_overrides (capability_id, enabled, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT(capability_id) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+                (capability_id, int(enabled), _now(), actor_id),
+            )
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._path)
         connection.row_factory = sqlite3.Row
@@ -230,4 +356,4 @@ def _verify_password(password: str, encoded: str) -> bool:
 
 
 def _identity_from_row(row: sqlite3.Row) -> LocalIdentity:
-    return LocalIdentity(str(row["account_id"]), str(row["username"]), str(row["display_name"]), str(row["role"]), Scope(str(row["project_id"]), frozenset(filter(None, str(row["site_ids"]).split(","))), actions=frozenset({"read"})))
+    return LocalIdentity(str(row["account_id"]), str(row["username"]), str(row["display_name"]), str(row["role"]), Scope(str(row["project_id"]), frozenset(filter(None, str(row["site_ids"]).split(","))), actions=frozenset({"read"})), str(row["status"]))

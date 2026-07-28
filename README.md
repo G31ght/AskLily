@@ -23,3 +23,9 @@ docker compose --env-file deploy/standalone/.env --profile standalone down --vol
 ```
 
 部署、备份、升级、审计和容量限制见 [Standalone 运维手册](docs/runbooks/P4-standalone-operations.md)。真实 Connector、L4 和 Production/HA 均不在此 Profile 范围内。
+
+## 本地后台管理（P5D）
+
+`/admin` 是独立的本地管理控制面，仅允许通过本机交互式初始化创建的 `project-admin` 账号访问。它可查看注册能力、管理本地账号状态、持久化最小审计，并停用或恢复已注册的业务 Capability；不会开放真实数据、模型 Provider、写操作或任意契约配置。
+
+初始化与运行边界见 [P5D 本地后台管理操作](docs/runbooks/P5D-local-admin-operations.md)。该持久化能力不改写 P4 无状态 Standalone 的验收结论。

@@ -22,6 +22,8 @@ export type Capability = {
   tool_ids: string[];
   view_ids: string[];
   limitations: string[];
+  enabled: boolean;
+  manageable: boolean;
 };
 
 export type ViewContext = {
@@ -51,6 +53,10 @@ export type Conversation = { conversation_id: string; title: string; updated_at:
 export type ConversationMessage = { author: "user" | "assistant"; body: string; source_label: string | null; limitation_label: string | null; created_at: string };
 export type ConversationDetail = Conversation & { messages: ConversationMessage[] };
 export type LocalIdentity = { account_id: string; username: string; display_name: string; role: string; scope: Scope };
+export type AdminOverview = { metrics: { capability_total: number; capability_enabled: number; capability_disabled: number; account_total: number; account_active: number; audit_event_total: number } };
+export type AdminAccount = { account_id: string; username: string; display_name: string; role: string; project_id: string; site_ids: string[]; status: "active" | "disabled"; created_at: string };
+export type AuditEvent = { event_id: string; occurred_at: string; actor_id: string; action: string; outcome: string; request_id: string; query_id: string | null; scope_project_id: string; tool_id: string | null; reason_code: string | null };
+export type AdminSystem = { profile: string; data_level: string; read_only: boolean; configuration_schema: string; limitations: string[] };
 
 export type Health = "healthy" | "critical" | "warning" | "recovered" | "unknown";
 
@@ -131,5 +137,13 @@ export const platformApi = {
     if (filters.search) parameters.set("search", filters.search);
     const suffix = parameters.size ? `?${parameters.toString()}` : "";
     return request<{ request_id: string; query: OpticHealthQuery }>(`/v1/optic-health${suffix}`);
-  }
+  },
+  adminOverview: () => request<AdminOverview>("/v1/admin/overview"),
+  adminCapabilities: () => request<{ capabilities: Capability[] }>("/v1/admin/capabilities"),
+  setCapabilityState: (capabilityId: string, enabled: boolean) => request<{ capability: Capability }>(`/v1/admin/capabilities/${capabilityId}/state`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+  adminAccounts: () => request<{ accounts: AdminAccount[] }>("/v1/admin/accounts"),
+  setAccountState: (accountId: string, status: "active" | "disabled") => request<{ account: AdminAccount }>(`/v1/admin/accounts/${accountId}/state`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  revokeAccountSessions: (accountId: string) => request<{ status: string }>(`/v1/admin/accounts/${accountId}/sessions`, { method: "DELETE" }),
+  adminAudit: (action?: string) => request<{ events: AuditEvent[] }>(`/v1/admin/audit${action ? `?action=${encodeURIComponent(action)}` : ""}`),
+  adminSystem: () => request<AdminSystem>("/v1/admin/system")
 };

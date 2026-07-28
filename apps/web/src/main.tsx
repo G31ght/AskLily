@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { AdminApp } from "./AdminApp";
 import { ApiFailure, ChatResult, Conversation, ConversationMessage, Health, LocalIdentity, OpticHealthQuery, PresentationModule, Session, platformApi } from "./api";
 import "./styles.css";
 
@@ -232,4 +233,4 @@ function WorkspaceModules({ modules, query }: { modules: PresentationModule[]; q
 
 function SavedConversation({ messages }: { messages: ConversationMessage[] }) { return <article className="answer saved-conversation">{messages.map((message, index) => <section key={`${message.created_at}-${index}`}><p className={message.author === "user" ? "bubble" : ""}>{message.body}</p>{message.author === "assistant" && <p className="meta">来源：{message.source_label ?? "-"} · 限制：{message.limitation_label ?? "-"}</p>}</section>)}</article>; }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(window.location.pathname.startsWith("/admin") ? <AdminApp /> : <App />);

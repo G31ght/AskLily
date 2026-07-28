@@ -40,6 +40,7 @@ ALLOWED_HEALTH = frozenset({"healthy", "critical", "warning", "recovered", "unkn
 PRESENTATION_MODULES: dict[str, dict[str, str]] = {
     "optic-health-overview": {"module_id": "optic-health-overview", "view_id": OPTIC_VIEW_ID},
 }
+MANAGEABLE_CAPABILITIES = frozenset({"optic-health"})
 
 
 class ScopeInput(BaseModel):
@@ -86,6 +87,14 @@ class LocalLoginInput(BaseModel):
 
 class AccountDeletionInput(BaseModel):
     password: str = Field(min_length=1, max_length=128)
+
+
+class AdminCapabilityStateInput(BaseModel):
+    enabled: bool
+
+
+class AdminAccountStateInput(BaseModel):
+    status: str = Field(pattern="^(active|disabled)$")
 
 
 DEVELOPMENT_IDENTITIES: dict[str, tuple[str, Scope]] = {
@@ -183,6 +192,14 @@ def _require_local_identity(request: Request, request_id: str) -> LocalIdentity:
     return identity
 
 
+def _require_admin(request: Request, request_id: str) -> LocalIdentity:
+    identity = _require_local_identity(request, request_id)
+    if identity.role != "project-admin":
+        _audit(identity.account_id, "admin.access", "denied", request_id, identity.scope, reason="project_admin_required")
+        raise HTTPException(403, detail={"code": "project_admin_required", "request_id": request_id})
+    return identity
+
+
 def _audit(
     actor: str,
     action: str,
@@ -194,20 +211,26 @@ def _audit(
     query_id: str | None = None,
     reason: str | None = None,
 ) -> None:
-    AUDIT_EVENTS.append(
-        AuditEvent(
-            event_id=str(uuid4()),
-            occurred_at=datetime.now(UTC),
-            actor_id=actor,
-            action=action,
-            outcome=outcome,
-            request_id=request_id,
-            query_id=query_id,
-            scope_project_id=scope.project_id,
-            tool_id=tool_id,
-            reason_code=reason,
-        )
+    event = AuditEvent(
+        event_id=str(uuid4()),
+        occurred_at=datetime.now(UTC),
+        actor_id=actor,
+        action=action,
+        outcome=outcome,
+        request_id=request_id,
+        query_id=query_id,
+        scope_project_id=scope.project_id,
+        tool_id=tool_id,
+        reason_code=reason,
     )
+    AUDIT_EVENTS.append(event)
+    LOCAL_IDENTITIES.append_audit_event(_audit_dict(event))
+
+
+def _require_capability_enabled(capability_id: str, actor: str, scope: Scope, request_id: str) -> None:
+    if not LOCAL_IDENTITIES.capability_enabled(capability_id):
+        _audit(actor, "capability.execute", "denied", request_id, scope, reason="capability_disabled")
+        raise HTTPException(409, detail={"code": "capability_disabled", "request_id": request_id})
 
 
 def _narrow(server_scope: Scope, requested: Scope | None, role: str, request_id: str, action: str) -> Scope:
@@ -234,6 +257,7 @@ def _run_optic_query(
     search: str | None = None,
     focus_resource_id: str | None = None,
 ) -> OpticHealthQuery:
+    _require_capability_enabled("optic-health", role, scope, request_id)
     try:
         REGISTRY.authorize_tool(OPTIC_TOOL_ID, scope)
     except ContractViolation as exc:
@@ -340,21 +364,23 @@ def session(request: Request, x_asklily_role: str = Header(default="operator")) 
 @app.get("/v1/capabilities")
 def capabilities(request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
     request_id = _request_id(request)
-    _, scope = _identity(x_asklily_role, request_id)
-    _audit(x_asklily_role, "capability_catalog.read", "allowed", request_id, scope)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    _audit(actor, "capability_catalog.read", "allowed", request_id, scope)
     return {"request_id": request_id, "capabilities": [_manifest_dict(item) for item in REGISTRY.capabilities.values()]}
 
 
 @app.post("/v1/tools/{tool_id}/authorize")
 def authorize_tool(tool_id: str, request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
     request_id = _request_id(request)
-    _, scope = _identity(x_asklily_role, request_id)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    if tool_id == OPTIC_TOOL_ID:
+        _require_capability_enabled("optic-health", actor, scope, request_id)
     try:
         contract = REGISTRY.authorize_tool(tool_id, scope)
     except ContractViolation as exc:
-        _audit(x_asklily_role, "tool.authorize", "denied", request_id, scope, tool_id=tool_id, reason=str(exc))
+        _audit(actor, "tool.authorize", "denied", request_id, scope, tool_id=tool_id, reason=str(exc))
         raise HTTPException(404, detail={"code": str(exc), "request_id": request_id}) from exc
-    _audit(x_asklily_role, "tool.authorize", "allowed", request_id, scope, tool_id=tool_id)
+    _audit(actor, "tool.authorize", "allowed", request_id, scope, tool_id=tool_id)
     return {"request_id": request_id, "tool_id": contract.tool_id, "read_only": True, "executed": False}
 
 
@@ -367,10 +393,10 @@ def optic_health(
     x_asklily_role: str = Header(default="operator"),
 ) -> dict[str, object]:
     request_id = _request_id(request)
-    _, scope = _identity(x_asklily_role, request_id)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
     result = _run_optic_query(
         scope,
-        x_asklily_role,
+        actor,
         request_id,
         health_filter=_health_filter(health, request_id),
         search=search,
@@ -386,8 +412,8 @@ def optic_health_suggestions(
     x_asklily_role: str = Header(default="operator"),
 ) -> dict[str, object]:
     request_id = _request_id(request)
-    _, scope = _identity(x_asklily_role, request_id)
-    result = _run_optic_query(scope, x_asklily_role, request_id, search=query)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    result = _run_optic_query(scope, actor, request_id, search=query)
     return {
         "request_id": request_id,
         "suggestions": [
@@ -402,16 +428,18 @@ def validate_view_context(
     payload: ViewContextInput, request: Request, x_asklily_role: str = Header(default="operator")
 ) -> dict[str, object]:
     request_id = _request_id(request)
-    _, server_scope = _identity(x_asklily_role, request_id)
+    actor, server_scope, _ = _request_identity(request, x_asklily_role, request_id)
+    if payload.view_id == OPTIC_VIEW_ID:
+        _require_capability_enabled("optic-health", actor, server_scope, request_id)
     try:
         context = REGISTRY.validate_view_context(
             ViewContext(payload.view_id, payload.version, payload.scope.as_contract(), payload.filters, payload.focus_resource_id),
             server_scope,
         )
     except ContractViolation as exc:
-        _audit(x_asklily_role, "view.validate", "denied", request_id, server_scope, reason=str(exc))
+        _audit(actor, "view.validate", "denied", request_id, server_scope, reason=str(exc))
         raise HTTPException(403, detail={"code": str(exc), "request_id": request_id}) from exc
-    _audit(x_asklily_role, "view.validate", "allowed", request_id, context.scope)
+    _audit(actor, "view.validate", "allowed", request_id, context.scope)
     return {"request_id": request_id, "view_context": _view_dict(context)}
 
 
@@ -492,6 +520,107 @@ def audit(request: Request, x_asklily_role: str = Header(default="auditor")) -> 
     return {"request_id": request_id, "events": [_audit_dict(event) for event in AUDIT_EVENTS]}
 
 
+@app.get("/v1/admin/overview")
+def admin_overview(request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    capabilities = [_manifest_dict(item) for item in REGISTRY.capabilities.values()]
+    accounts = LOCAL_IDENTITIES.list_accounts()
+    _audit(identity.account_id, "admin.overview.read", "allowed", request_id, identity.scope)
+    return {
+        "request_id": request_id,
+        "metrics": {
+            "capability_total": len(capabilities),
+            "capability_enabled": sum(1 for item in capabilities if item["enabled"]),
+            "capability_disabled": sum(1 for item in capabilities if not item["enabled"]),
+            "account_total": len(accounts),
+            "account_active": sum(1 for item in accounts if item["status"] == "active"),
+            "audit_event_total": LOCAL_IDENTITIES.audit_event_count(),
+        },
+    }
+
+
+@app.get("/v1/admin/capabilities")
+def admin_capabilities(request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    _audit(identity.account_id, "admin.capability.read", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "capabilities": [_manifest_dict(item) for item in REGISTRY.capabilities.values()]}
+
+
+@app.patch("/v1/admin/capabilities/{capability_id}/state")
+def set_admin_capability_state(capability_id: str, payload: AdminCapabilityStateInput, request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    manifest = REGISTRY.capabilities.get(capability_id)
+    if manifest is None:
+        raise HTTPException(404, detail={"code": "capability_not_found", "request_id": request_id})
+    if capability_id not in MANAGEABLE_CAPABILITIES:
+        _audit(identity.account_id, "admin.capability.state", "denied", request_id, identity.scope, reason="capability_state_protected")
+        raise HTTPException(403, detail={"code": "capability_state_protected", "request_id": request_id})
+    LOCAL_IDENTITIES.set_capability_enabled(capability_id, payload.enabled, identity.account_id)
+    _audit(identity.account_id, "admin.capability.state", "allowed", request_id, identity.scope, reason="enabled" if payload.enabled else "disabled")
+    return {"request_id": request_id, "capability": _manifest_dict(manifest)}
+
+
+@app.get("/v1/admin/accounts")
+def admin_accounts(request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    _audit(identity.account_id, "admin.account.read", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "accounts": LOCAL_IDENTITIES.list_accounts()}
+
+
+@app.patch("/v1/admin/accounts/{account_id}/state")
+def set_admin_account_state(account_id: str, payload: AdminAccountStateInput, request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    try:
+        account = LOCAL_IDENTITIES.set_account_status(account_id, payload.status)
+    except IdentityError as exc:
+        code = str(exc)
+        status = 403 if code == "local_project_admin_state_protected" else 404
+        _audit(identity.account_id, "admin.account.state", "denied", request_id, identity.scope, reason=code)
+        raise HTTPException(status, detail={"code": code, "request_id": request_id}) from exc
+    _audit(identity.account_id, "admin.account.state", "allowed", request_id, identity.scope, reason=payload.status)
+    return {"request_id": request_id, "account": account}
+
+
+@app.delete("/v1/admin/accounts/{account_id}/sessions")
+def revoke_admin_account_sessions(account_id: str, request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    try:
+        LOCAL_IDENTITIES.revoke_account_sessions(account_id)
+    except IdentityError as exc:
+        raise HTTPException(404, detail={"code": str(exc), "request_id": request_id}) from exc
+    _audit(identity.account_id, "admin.account.sessions.revoke", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "status": "sessions_revoked"}
+
+
+@app.get("/v1/admin/audit")
+def admin_audit(request: Request, limit: int = Query(default=50, ge=1, le=200), action: str | None = Query(default=None, max_length=100)) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    _audit(identity.account_id, "admin.audit.read", "allowed", request_id, identity.scope)
+    return {"request_id": request_id, "events": LOCAL_IDENTITIES.list_audit_events(limit, action)}
+
+
+@app.get("/v1/admin/system")
+def admin_system(request: Request) -> dict[str, object]:
+    request_id = _request_id(request)
+    identity = _require_admin(request, request_id)
+    _audit(identity.account_id, "admin.system.read", "allowed", request_id, identity.scope)
+    return {
+        "request_id": request_id,
+        "profile": RUNTIME_PROFILE,
+        "data_level": "fixture_l0_l1",
+        "read_only": True,
+        "configuration_schema": "none_registered",
+        "limitations": ["no_real_connector", "no_model_provider", "no_write_operation"],
+    }
+
+
 def _scope_dict(scope: Scope) -> dict[str, object]:
     return {
         "project_id": scope.project_id,
@@ -527,6 +656,8 @@ def _manifest_dict(manifest: CapabilityManifest) -> dict[str, object]:
         "tool_ids": list(manifest.tool_ids),
         "view_ids": list(manifest.view_ids),
         "limitations": list(manifest.limitations),
+        "enabled": True if manifest.capability_id not in MANAGEABLE_CAPABILITIES else LOCAL_IDENTITIES.capability_enabled(manifest.capability_id),
+        "manageable": manifest.capability_id in MANAGEABLE_CAPABILITIES,
     }
 
 
