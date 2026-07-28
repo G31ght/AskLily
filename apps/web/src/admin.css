@@ -15,6 +15,9 @@
 /* Keep forms readable and tables contained as the admin window narrows. */
 .admin-table-card { overflow-x: auto; }
 .admin-table-card > header, .admin-account-create { min-width: 0; }
+.audit-card { overflow: hidden; }
+.audit-log-scroll { max-height: clamp(18rem, calc(100dvh - 20rem), 42rem); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.audit-log-scroll table { margin: 0; }
 @media (max-width: 1050px) {
   .admin-account-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-account-create fieldset { grid-column: 1 / -1; flex-wrap: wrap; }
