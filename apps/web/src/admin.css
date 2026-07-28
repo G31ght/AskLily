@@ -11,3 +11,31 @@
 .system-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.system-grid dl { display: grid; grid-template-columns: 1fr auto; gap: .85rem; margin: 1.35rem 0 0; }.system-grid dt { color: #7e88a6; font-size: .84rem; }.system-grid dd { margin: 0; color: #2d3859; font-size: .84rem; }.system-grid ul { display: grid; gap: .65rem; margin: 1.25rem 0; padding-left: 1.1rem; color: #596482; font-size: .84rem; }
 @media (max-width: 1000px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.admin-grid, .system-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .admin-shell { grid-template-columns: 1fr; gap: 0; padding: 0; }.admin-rail { min-height: auto; padding: .9rem; border: 0; border-radius: 0; }.admin-rail-label, .admin-identity { display: none; }.admin-rail nav { grid-template-columns: repeat(5, 1fr); }.admin-rail nav button { display: grid; justify-items: center; gap: .25rem; padding: .45rem .1rem; font-size: .65rem; }.admin-main { min-height: calc(100vh - 126px); padding: 1.25rem; border: 0; border-radius: 0; }.admin-header { display: grid; gap: .75rem; }.admin-profile { width: fit-content; }.metric-grid { grid-template-columns: 1fr 1fr; }.metric-card { min-height: 110px; padding: 1rem; }.metric-card b { font-size: 1.65rem; } }
+
+/* Keep forms readable and tables contained as the admin window narrows. */
+.admin-table-card { overflow-x: auto; }
+.admin-table-card > header, .admin-account-create { min-width: 0; }
+@media (max-width: 1050px) {
+  .admin-account-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-account-create fieldset { grid-column: 1 / -1; flex-wrap: wrap; }
+  .admin-account-create > button { justify-self: start; }
+}
+@media (max-width: 720px) {
+  .admin-main { min-width: 0; overflow-x: hidden; }
+  .admin-header > div:first-child { min-width: 0; }
+  .admin-header p { overflow-wrap: anywhere; }
+  .admin-table-card { margin-inline: -1.25rem; border-radius: 0; border-inline: 0; }
+  .admin-table-card > header, .admin-table-card > form { margin-inline: 1.25rem; }
+  .admin-table-card table { min-width: 640px; }
+  .admin-account-create { grid-template-columns: 1fr; }
+  .admin-account-create fieldset { display: grid; grid-column: auto; }
+  .admin-account-create > button { justify-self: stretch; }
+}
+@media (max-width: 420px) {
+  .admin-shell { min-width: 0; }
+  .admin-main { padding: 1rem; }
+  .admin-table-card { margin-inline: -1rem; }
+  .admin-table-card > header, .admin-table-card > form { margin-inline: 1rem; }
+  .metric-grid { grid-template-columns: 1fr; }
+  .admin-rail nav button { font-size: .58rem; }
+}

@@ -66,3 +66,37 @@ button { cursor: pointer; border: 0; } .loading, .login { min-height: 100vh; dis
 .account-menu button { width: 100%; margin: 0 !important; padding: .55rem .65rem; border-radius: .55rem; color: #26315d !important; text-align: left; }
 .account-menu button:hover { background: #eeedff; color: #4d48ca !important; }
 .shell.rail-compact .account-menu { bottom: 0; left: calc(100% + .55rem); }
+
+/* Responsive layout contract: never compress the workbench into an unreadable third column. */
+html, body, #root { min-width: 0; min-height: 100%; }
+.conversation, .workbench, .module { min-width: 0; }
+.module { overflow-x: auto; }
+.module table { min-width: 460px; }
+@media (max-width: 1180px) and (min-width: 781px) {
+  .shell.work { grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(0, auto); }
+  .shell.work .conversation, .shell.work .workbench { grid-column: 2; min-height: min(72vh, 680px); }
+  .shell.work .conversation { grid-row: 1; }
+  .shell.work .workbench { grid-row: 2; }
+  .work .workbench > * { transition-delay: 0s; }
+}
+@media (max-width: 780px) {
+  .login { padding: 1rem; }
+  .login section { padding: 1.5rem; border-radius: 1.15rem; }
+  .login form div { flex-wrap: wrap; }
+  .conversation, .workbench { min-width: 0; min-height: 100svh; }
+  .conversation:not(.idle) { padding: 1.25rem; }
+  .conversation > header, .workbench > header { flex-wrap: wrap; }
+  .eyebrow { line-height: 1.5; }
+  .answer { width: 100%; margin-top: 1.5rem; overflow-wrap: anywhere; }
+  .bubble { max-width: 100%; overflow-wrap: anywhere; }
+  .composer { gap: .45rem; }
+  .composer button { flex: 0 0 3rem; }
+  .module { padding: 1rem; }
+  .module table { min-width: 420px; }
+}
+@media (max-width: 420px) {
+  .idle > header { top: 1rem; left: 1rem; right: 1rem; }
+  .idle .composer { right: 1rem; bottom: 1rem; left: 1rem; }
+  .particle-question-action { height: 72px; }
+  .module table { min-width: 380px; }
+}
