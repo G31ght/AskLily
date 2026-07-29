@@ -1,7 +1,8 @@
 # P5E、P6 与 P6 CI 结项及工作交接
 
 - 交接日期：2026-07-29
-- 交接审计基线：`main` `f4dae7a2a6d5917fccd9028bfeeafd5a4b67b54a`
+- 实现集成基线：`main` `f4dae7a2a6d5917fccd9028bfeeafd5a4b67b54a`（PR #12）
+- 交接关闭基线：`main` `e1e9dbb3038a449cc71d21b11fbb675f0beafb0c`（PR #13）
 - 合并证据：PR #12 已合并，且 L0 governance、Python、Web、P6 unified Compose smoke 均通过。
 - 本地运行：`http://127.0.0.1:8080`，默认显式 Fixture；不连接真实来源。
 
@@ -9,8 +10,8 @@
 
 | 项目 | 结论 | 主要证据 |
 | --- | --- | --- |
-| P6 统一运行时与数据源架构收敛 | 已接受、已合并 | [P6 完成包](P6-unified-runtime-convergence-completion-package.md)、[ADR-0006](../adr/0006-unified-runtime-and-data-source-state.md) |
-| P5E 只读监控来源预检 | 已接受、已合并 | [P5E 完成包](P5E-readonly-monitoring-source-readiness-completion-package.md)、`monitoring-source-readiness` Capability |
+| P6 统一运行时与数据源架构收敛 | 已接受、已合并 | [P6 完成包](P6-unified-runtime-convergence-completion-package.md)、[正式独立验收报告](../../tests/reports/p5e-p6-independent-acceptance.md)、[ADR-0006](../adr/0006-unified-runtime-and-data-source-state.md) |
+| P5E 只读监控来源预检 | 已接受、已合并 | [P5E 完成包](P5E-readonly-monitoring-source-readiness-completion-package.md)、[正式独立验收报告](../../tests/reports/p5e-p6-independent-acceptance.md)、`monitoring-source-readiness` Capability |
 | P6 CI 合同收敛 | 已关闭、CI 全绿 | [P6 CI 结项记录](P6-unified-runtime-ci-closeout.md) |
 | Git 历史收敛 | 已完成 | 本地与远端仅保留 `main`；P0-P4 历史分支及 PR 临时分支已删除 |
 
@@ -26,8 +27,9 @@
 
 - 本地启动与恢复：[P6 统一运行时运维手册](../runbooks/P6-unified-runtime-operations.md)。
 - 本地管理员操作：[P5D 本地后台管理操作](../runbooks/P5D-local-admin-operations.md)。
-- 结项回归：`pytest -q`（37 passed）、`pnpm typecheck`、`pnpm test:web`（2 passed）、`bash infra/ci/check-p0-governance.sh`、`docker compose config --quiet`。
-- 若做隔离 Compose 验证，必须使用临时项目名、临时端口和临时卷，并在记录结果后执行 `down --volumes --remove-orphans`；不得复用客户或既有持久化数据。
+- Compose 调用兼容性：先设置 `COMPOSE='docker compose'`（v2 插件）或 `COMPOSE='docker-compose'`（旧式独立命令）；二者使用同一份 Compose 定义。
+- 结项回归：`pytest -q`（37 passed）、`pnpm typecheck`、`pnpm test:web`（2 passed）、`bash infra/ci/check-p0-governance.sh`、`$COMPOSE config --quiet`。
+- 若做隔离 Compose 验证，必须使用临时项目名、临时端口和临时卷，并在记录结果后执行 `$COMPOSE -p <temporary-project> down --volumes --remove-orphans`；不得复用客户或既有持久化数据。
 
 ## 仍然禁止或待单独授权的事项
 

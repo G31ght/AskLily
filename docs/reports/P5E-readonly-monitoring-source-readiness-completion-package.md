@@ -18,6 +18,7 @@
 - 最终 Python 全量：`37 passed`。
 - Ruff、mypy、Web TypeScript 通过；Web Vitest：`2 passed`。
 - 独立 Test Agent：复核通过。补充临时 Zabbix/Prometheus 注册表的管理员 API 回归后，确认两类来源均 `blocked`、allow-list 正确，且序列化响应不含 endpoint、token、credential、PromQL、label 或原始观察字段。
+- 正式记录：[P5E/P6 独立只读验收报告](../../tests/reports/p5e-p6-independent-acceptance.md)。
 
 ## 未包含
 

@@ -8,9 +8,12 @@ AI 驱动运维平台。当前交付包含 P2 光模块健康 Fixture、P3 Zabbi
 
 前置条件：Docker CLI + 可用的本机容器运行时（Docker Engine、Docker Desktop 或 Colima），且仅在本机受控环境运行。默认数据源是镜像内显式启用的 L0/L1 Fixture；不连接真实 Zabbix、不需要 Token，也不包含业务写操作。
 
+Compose 调用取决于本机 CLI 安装：若 `docker compose version` 可用，设置 `COMPOSE='docker compose'`；若本机仅有旧式独立命令（本机 Colima 默认场景），设置 `COMPOSE='docker-compose'`。以下命令统一使用 `$COMPOSE`，两种调用方式对应同一份 `compose.yaml`。
+
 ```bash
+export COMPOSE='docker compose' # 或：export COMPOSE='docker-compose'
 cp deploy/standalone/.env.example deploy/standalone/.env
-docker compose --env-file deploy/standalone/.env up --build --wait
+$COMPOSE --env-file deploy/standalone/.env up --build --wait
 curl --fail http://127.0.0.1:8080/health
 ```
 
@@ -19,7 +22,7 @@ curl --fail http://127.0.0.1:8080/health
 关闭服务：
 
 ```bash
-docker compose --env-file deploy/standalone/.env down --remove-orphans
+$COMPOSE --env-file deploy/standalone/.env down --remove-orphans
 ```
 
 正常停止不会删除 SQLite 平台状态卷。只有隔离 Fixture 验证项目才可在明确项目名后使用 `down --volumes` 清理临时数据。部署、备份、升级、审计和恢复边界见 [P6 统一运行时运维手册](docs/runbooks/P6-unified-runtime-operations.md)。真实 Connector、L4 和 Production/HA 均不在当前范围内。
