@@ -1,4 +1,4 @@
-name: P4 standalone validation
+name: P6 unified runtime validation
 
 on:
   pull_request:
@@ -10,22 +10,44 @@ permissions:
   contents: read
 
 jobs:
-  standalone:
-    name: P4 standalone Compose smoke
+  unified-runtime:
+    name: P6 unified Compose smoke
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Validate non-runtime standalone assets
+      - name: Validate unified runtime assets
         run: bash ops/standalone/verify-assets.sh
-      - name: Validate Compose profile
-        run: docker compose --profile standalone config --quiet
-      - name: Build and start standalone profile
-        run: docker compose --profile standalone up --build --wait
-      - name: Verify proxied API health and Web entrypoint
+      - name: Validate unified Compose configuration
+        run: docker compose config --quiet
+      - name: Build and start unified runtime
+        run: docker compose up --build --wait
+      - name: Verify Fixture runtime health and Web entrypoint
         run: |
-          curl --fail --silent --show-error --retry 5 http://127.0.0.1:8080/health | grep -F '"profile":"standalone"'
+          curl --fail --silent --show-error --retry 5 http://127.0.0.1:8080/health > /tmp/asklily-health.json
+          python3 - <<'PY'
+          import json
+
+          health = json.load(open("/tmp/asklily-health.json", encoding="utf-8"))
+          assert health["status"] == "ok"
+          runtime = health["runtime"]
+          assert runtime["declared_environment"] == "fixture"
+          fixture = next(source for source in runtime["data_sources"] if source["source_id"] == "fixture-optic-health-l0-l1")
+          assert fixture == {
+              "source_id": "fixture-optic-health-l0-l1",
+              "kind": "fixture",
+              "enabled": True,
+              "read_only": True,
+              "data_level": "L0_L1",
+              "declared_environment": "fixture",
+              "visible_site_ids": ["site-a", "site-b"],
+              "connection_state": "ready",
+              "reason_code": None,
+              "last_checked_at": None,
+              "config_revision": "fixture-v1",
+          }
+          PY
           curl --fail --silent --show-error http://127.0.0.1:8080/ | grep -F '<title>'
-      - name: Stop standalone profile
+      - name: Stop unified runtime
         if: always()
-        run: docker compose --profile standalone down --volumes --remove-orphans
+        run: docker compose down --volumes --remove-orphans

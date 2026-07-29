@@ -1,0 +1,26 @@
+# P5E mock-only platform capability; it never creates a monitoring connection.
+capability:
+  id: monitoring-source-readiness
+  name: Read-only Monitoring Source Readiness
+  owner: platform
+  version: 1.0.0
+  verification_status: mock_candidate
+  data_source_ids: []
+contracts:
+  api: 1.0.0
+  tool: 1.0.0
+  view: 1.0.0
+  connector: mock_only
+tools:
+  - id: monitoring_source.readiness
+    action: read
+    executed: false
+views:
+  - id: monitoring_source_readiness
+    version: 1.0.0
+data_sources: []
+limitations:
+  - no_network_io
+  - no_credentials
+  - no_real_connector
+  - no_write_operation

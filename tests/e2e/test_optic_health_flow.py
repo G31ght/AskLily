@@ -22,6 +22,7 @@ def test_chat_to_view_context_to_workspace_query_keeps_fixture_scope() -> None:
     assert context["view_id"] == "optic_health"
     assert context["scope"]["site_ids"] == ["site-a"]
     assert result["sources"] == ["fixture://optic-health/l0-l1-v1"]
+    assert result["presentation"] == {"mode": "chat", "modules": []}
 
     validated = client.post(
         "/v1/views/context",

@@ -1,5 +1,7 @@
 # P4 Standalone 运维手册
 
+> 历史关闭记录：本手册描述 P4 当时的无状态 Profile，不是当前部署接口。P6 的唯一 Compose、持久 SQLite 与显式数据源状态请使用 [P6 统一运行时运维手册](P6-unified-runtime-operations.md)。P4 结论不因本说明被改写。
+
 - 适用任务：[P4 #10](https://github.com/G31ght/AskLily/issues/10)
 - Profile：`standalone`
 - 数据边界：仅 P2 Fixture；不连接真实 Zabbix，不读取真实数据，不执行业务写操作。

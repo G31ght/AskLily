@@ -29,6 +29,7 @@ pythonpath = [
   "packages/contracts/src",
   "packages/domain/src",
   "connectors/zabbix/src",
+  "connectors/monitoring/src",
   "services/api/src",
   "services/agent/src",
 ]
