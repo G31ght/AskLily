@@ -3,7 +3,7 @@ FROM python:3.11.11-slim-bookworm
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/packages/contracts/src:/app/packages/domain/src:/app/connectors/zabbix/src:/app/services/api/src:/app/services/agent/src
+    PYTHONPATH=/app/packages/contracts/src:/app/packages/domain/src:/app/connectors/zabbix/src:/app/connectors/monitoring/src:/app/services/api/src:/app/services/agent/src
 
 COPY requirements-dev.lock pyproject.toml ./
 RUN pip install --no-cache-dir -r requirements-dev.lock

@@ -21,6 +21,7 @@ from asklily_domain import (
     PlatformRegistry,
     query_optic_health,
 )
+from asklily_monitoring import assess_monitoring_source_preflight
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import RequestResponseEndpoint
@@ -134,6 +135,16 @@ REGISTRY.register_capability(
         ("platform.status",),
         ("platform_status",),
         ("no_business_capability", "no_real_data", "no_model_provider"),
+    )
+)
+REGISTRY.register_tool(ToolContract("monitoring_source.readiness", "1.0.0", "platform", "read", "1.0.0", "1.0.0"))
+REGISTRY.register_view("monitoring_source_readiness")
+REGISTRY.register_capability(
+    CapabilityManifest(
+        "monitoring-source-readiness", "1.0.0", "platform", "mock_candidate",
+        tuple(item.source_id for item in RUNTIME_CONFIG.sources if item.kind in {"zabbix", "prometheus"}),
+        ("monitoring_source.readiness",), ("monitoring_source_readiness",),
+        ("no_network_io", "no_credentials", "no_real_connector", "no_write_operation"),
     )
 )
 REGISTRY.register_tool(ToolContract(OPTIC_TOOL_ID, "1.0.0", "optic-health", "read", "1.0.0", "1.0.0"))
@@ -711,6 +722,7 @@ def admin_system(request: Request) -> dict[str, object]:
     return {
         "request_id": request_id,
         "runtime": _runtime_dict(identity.scope),
+        "monitoring_source_readiness": _monitoring_source_readiness(),
         "persisted_data_source_status": LOCAL_IDENTITIES.list_data_source_status(),
         "read_only": True,
         "configuration_schema": "data-source-registry/1.0.0",
@@ -734,6 +746,27 @@ def _runtime_dict(scope: Scope | None = None) -> dict[str, object]:
         "declared_environment": RUNTIME_CONFIG.deployment_environment,
         "data_sources": _data_source_states(scope),
     }
+
+
+def _monitoring_source_readiness() -> list[dict[str, object]]:
+    """Return only no-I/O preflight summaries; source secrets are intentionally absent."""
+    summaries: list[dict[str, object]] = []
+    for source in RUNTIME_CONFIG.sources:
+        if source.kind not in {"zabbix", "prometheus"}:
+            continue
+        result = assess_monitoring_source_preflight(
+            source.kind,
+            source_declared=source.enabled,
+            configuration_declared=False,
+            approved_scope_declared=bool(source.visible_site_ids),
+            governance_accepted=source.kind == "zabbix",
+            live_execution_authorized=False,
+        )
+        summaries.append({
+            "source_id": source.source_id, "source_kind": result.source_kind, "status": result.status,
+            "blockers": list(result.blockers), "allowed_operations": list(result.allowed_operations),
+        })
+    return summaries
 
 
 def _local_identity_dict(identity: LocalIdentity) -> dict[str, object]:

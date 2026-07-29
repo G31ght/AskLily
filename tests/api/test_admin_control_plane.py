@@ -3,6 +3,7 @@ from pathlib import Path
 
 from asklily_api import main
 from asklily_api.local_identity import IdentityError, LocalIdentityStore
+from asklily_api.runtime import DataSource, RuntimeConfig
 from fastapi.testclient import TestClient
 
 
@@ -114,3 +115,28 @@ def test_first_run_bootstrap_is_one_time_and_migrates_existing_local_database(tm
     assert "status" in columns
     assert database.stat().st_mode & 0o777 == 0o600
     assert database.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_monitoring_readiness_admin_api_is_blocked_and_does_not_expose_sensitive_configuration(tmp_path: Path, monkeypatch) -> None:
+    admin = _admin_client(_store(tmp_path))
+    monkeypatch.setattr(
+        main,
+        "RUNTIME_CONFIG",
+        RuntimeConfig(
+            "1.0.0", "production",
+            (
+                DataSource("zabbix-source", "zabbix", True, True, "unverified", ("optic-health",), frozenset({"site-a"}), "production", "revision-a"),
+                DataSource("prometheus-source", "prometheus", True, True, "unverified", ("optic-health",), frozenset({"site-a"}), "production", "revision-b"),
+            ),
+        ),
+    )
+    response = admin.get("/v1/admin/system")
+    assert response.status_code == 200
+    readiness = response.json()["monitoring_source_readiness"]
+    assert readiness == [
+        {"source_id": "zabbix-source", "source_kind": "zabbix", "status": "blocked", "blockers": ["monitoring_configuration_not_declared", "monitoring_live_execution_not_authorized"], "allowed_operations": ["history.get", "host.get", "item.get"]},
+        {"source_id": "prometheus-source", "source_kind": "prometheus", "status": "blocked", "blockers": ["monitoring_configuration_not_declared", "monitoring_governance_not_accepted", "monitoring_live_execution_not_authorized"], "allowed_operations": ["query", "query_range"]},
+    ]
+    rendered = str(response.json())
+    for sensitive_name in ("endpoint", "token", "credential", "promql", "label", "raw_observation"):
+        assert sensitive_name not in rendered

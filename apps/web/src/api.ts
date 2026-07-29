@@ -76,7 +76,8 @@ export type LocalIdentity = { account_id: string; username: string; display_name
 export type AdminOverview = { metrics: { capability_total: number; capability_enabled: number; capability_disabled: number; account_total: number; account_active: number; audit_event_total: number } };
 export type AdminAccount = { account_id: string; username: string; display_name: string; role: string; project_id: string; site_ids: string[]; status: "active" | "disabled"; created_at: string };
 export type AuditEvent = { event_id: string; occurred_at: string; actor_id: string; action: string; outcome: string; request_id: string; query_id: string | null; scope_project_id: string; tool_id: string | null; reason_code: string | null };
-export type AdminSystem = { runtime: RuntimeContext; persisted_data_source_status: Array<Omit<DataSourceState, "enabled" | "read_only" | "visible_site_ids" | "last_checked_at"> & { observed_at: string }>; read_only: boolean; configuration_schema: string; limitations: string[] };
+export type MonitoringSourceReadiness = { source_id: string; source_kind: "zabbix" | "prometheus"; status: "ready" | "blocked"; blockers: string[]; allowed_operations: string[] };
+export type AdminSystem = { runtime: RuntimeContext; persisted_data_source_status: Array<Omit<DataSourceState, "enabled" | "read_only" | "visible_site_ids" | "last_checked_at"> & { observed_at: string }>; monitoring_source_readiness: MonitoringSourceReadiness[]; read_only: boolean; configuration_schema: string; limitations: string[] };
 export type AdminBootstrapStatus = { bootstrap_required: boolean };
 
 export type Health = "healthy" | "critical" | "warning" | "recovered" | "unknown";
