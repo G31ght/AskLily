@@ -4,8 +4,8 @@
 - 规范版本：v0.1
 - 归档渲染件：[工程开工文档 PDF](../../output/pdf/AskLily_工程开工文档_v0.1.pdf)
 - PDF SHA-256：`9969af91eb371c23daa0cacf9247c433fdb5554a4e7e9f6ac12c9bb0c2dee246`
-- 当前 `main` 集成基线：`21afa61a567d647a059fcc694e6019c6eb445a77`
-- 待收敛冻结基线：`efd5dc15e71bd8c677db0067d3cbab1912575db3`（P5；尚未合并至 `main`）
+- P5E/P6 最终集成基线：`f4dae7a2a6d5917fccd9028bfeeafd5a4b67b54a`（PR #12 合并 P5A/P5B/P5D/P5E、P6 与 P6 CI 收敛）
+- 历史 P5 功能冻结点：`efd5dc15e71bd8c677db0067d3cbab1912575db3`（已由 PR #12 收敛至 `main`）
 
 ## 文档地位与冲突规则
 
@@ -66,7 +66,7 @@ AskLily 是面向 GPU 数据中心及相关运维环境的 AI 驱动运维平台
 | P2 光模块纵向切片 | 已关闭 | Fixture / Scenario 驱动的 Demo 能力。 |
 | P3 Zabbix 只读预备 | 已关闭且 L4 延期 | Mock 预备与真实只读数据处理边界；未完成真实 L4。 |
 | P4 Standalone 硬化 | 已关闭 | 受控单机无状态 Compose Profile；非 Production。 |
-| P5 能力扩展 | 可继续，逐项审批 | P5A 前台、P5B 本地账号历史与 P5D 本机控制面已由 P6 纳入统一运行基线；新的 Capability 必须独立 Brief、任务协议与验收。 |
+| P5 能力扩展 | 可继续，逐项审批 | P5A 前台、P5B 本地账号历史、P5D 本机控制面与 P5E 监控来源零网络预检已收敛至统一基线；新的 Capability 必须独立 Brief、任务协议与验收。 |
 | P6 统一运行时与数据源架构收敛 | 已关闭并获接受 | 统一 Compose、持久化边界与数据源状态模型已完成独立验收；不开放真实 Connector、L4 或 Production。 |
 | Production/商业化工程 | 暂停 | HA、Kubernetes、容量、灾备和 Production SLA 仍仅在商业化、工程化和容量证据出现后单独立项。 |
 
