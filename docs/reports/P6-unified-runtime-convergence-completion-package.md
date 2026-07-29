@@ -1,10 +1,11 @@
-# P6 统一运行时与数据源架构收敛完成包（待负责人验收）
+# P6 统一运行时与数据源架构收敛完成包（已结项）
 
-- 实施分支：`codex/p6-unified-runtime-convergence`
+- 历史实施分支：`codex/p6-unified-runtime-convergence`（已在收敛后删除）
 - 施工基线：`ada7cadd97354ea77eee9e6fd3a7c438adc7aa2b`（包含 P6 实施授权治理记录）
 - P5 冻结点：`efd5dc15e71bd8c677db0067d3cbab1912575db3`
-- `main` 基线：`21afa61a567d647a059fcc694e6019c6eb445a77`
-- 状态：项目负责人于 2026-07-28 接受；实现、自测与独立只读验收完成。P5 可按新的、单独批准的 Capability Brief 继续。
+- 初始 `main` 基线：`21afa61a567d647a059fcc694e6019c6eb445a77`
+- 最终集成：PR #12，`main` `f4dae7a2a6d5917fccd9028bfeeafd5a4b67b54a`
+- 状态：项目负责人于 2026-07-28 接受；实现、自测与独立只读验收完成，随后经 PR #12 与 P6 CI 修复合并。P5 可按新的、单独批准的 Capability Brief 继续。
 
 ## 已交付收敛
 
@@ -43,6 +44,6 @@
 - SQLite 备份包含获准的平台控制面（包括 P5 本地账号/历史），必须本机受限保存；它不是远程备份功能，也绝不能含原始监控事实。
 - P5 冻结已解除；本完成包不自动批准或启动下一项 P5 Capability。
 
-## 负责人验收所需决定
+## 结项与后续决策
 
-P6 已接受。下一项 P5 Capability 必须仍以独立 Brief、任务协议和验收证据推进。
+P6 已接受并合并。P6 CI 收敛证据见 [P6 统一运行时 CI 结项记录](P6-unified-runtime-ci-closeout.md)。下一项 P5 Capability 必须仍以独立 Brief、任务协议和验收证据推进。
