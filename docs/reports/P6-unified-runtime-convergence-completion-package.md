@@ -36,6 +36,7 @@
 - 静态检查：`ruff check packages services connectors tests` 通过；`mypy` 通过。
 - 前端：`pnpm typecheck` 与 `pnpm test:web`（2 项）通过。
 - 独立 Test Agent：完成只读复核。最初发现的数据源 Scope 未执行、Session 可见站点泄露与 README 误删卷命令均已修复；复核确认 `session=200 [site-a]`、查询仅 `site-a`、越出来源范围的 ViewContext 返回 `403 data_source_scope_not_allowed`。独立 Agent 的测试批次为 `33 passed`，Ruff/mypy、前端 TypeScript/2 项 Web 测试、离线资产校验和 diff 检查均通过；随后 Project Lead 新增损坏 SQLite/控制面数据落库边界测试并取得最终 `34 passed`。
+- 正式记录：[P5E/P6 独立只读验收报告](../../tests/reports/p5e-p6-independent-acceptance.md)。
 
 ## 已知限制与非目标
 
