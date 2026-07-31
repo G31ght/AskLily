@@ -10,6 +10,7 @@ from asklily_contracts import (
     Scope,
     ToolContract,
     ViewContext,
+    ViewContract,
 )
 
 
@@ -18,7 +19,7 @@ class PlatformRegistry:
     """In-memory registry for the P1 skeleton; it does not execute Tools."""
 
     tools: dict[str, ToolContract] = field(default_factory=dict)
-    view_ids: set[str] = field(default_factory=set)
+    views: dict[str, ViewContract] = field(default_factory=dict)
     capabilities: dict[str, CapabilityManifest] = field(default_factory=dict)
 
     def register_tool(self, contract: ToolContract) -> None:
@@ -28,16 +29,16 @@ class PlatformRegistry:
             raise ContractViolation("write_tools_not_allowed_in_p1")
         self.tools[contract.tool_id] = contract
 
-    def register_view(self, view_id: str) -> None:
-        if not view_id or view_id in self.view_ids:
+    def register_view(self, contract: ViewContract) -> None:
+        if not contract.view_id or not contract.version or contract.view_id in self.views:
             raise ContractViolation("view_already_registered_or_invalid")
-        self.view_ids.add(view_id)
+        self.views[contract.view_id] = contract
 
     def register_capability(self, manifest: CapabilityManifest) -> None:
         if manifest.capability_id in self.capabilities:
             raise ContractViolation("capability_already_registered")
         unknown_tools = set(manifest.tool_ids) - set(self.tools)
-        unknown_views = set(manifest.view_ids) - self.view_ids
+        unknown_views = set(manifest.view_ids) - set(self.views)
         if unknown_tools or unknown_views:
             raise ContractViolation("capability_references_unregistered_contract")
         self.capabilities[manifest.capability_id] = manifest
@@ -51,9 +52,21 @@ class PlatformRegistry:
             raise ContractViolation("tool_action_not_allowed_by_scope")
         return contract
 
-    def validate_view_context(self, context: ViewContext, server_scope: Scope) -> ViewContext:
-        if context.view_id not in self.view_ids:
+    def validate_view_context(
+        self,
+        context: ViewContext,
+        server_scope: Scope,
+        workspace_modules: tuple[str, ...] = (),
+    ) -> ViewContext:
+        contract = self.views.get(context.view_id)
+        if contract is None:
             raise ContractViolation("view_not_registered")
+        if context.version != contract.version:
+            raise ContractViolation("view_version_not_registered")
+        if not set(context.filters).issubset(contract.allowed_filter_keys):
+            raise ContractViolation("view_filter_not_allowed")
+        if not set(workspace_modules).issubset(contract.allowed_workspace_modules):
+            raise ContractViolation("workspace_module_not_allowed")
         return ViewContext(
             view_id=context.view_id,
             version=context.version,
@@ -62,3 +75,11 @@ class PlatformRegistry:
             focus_resource_id=context.focus_resource_id,
             query_id=context.query_id,
         )
+
+    def validate_presentation_modules(self, view_id: str, module_ids: tuple[str, ...]) -> None:
+        """Reject any workspace module not registered for the requested View."""
+        contract = self.views.get(view_id)
+        if contract is None:
+            raise ContractViolation("view_not_registered")
+        if not set(module_ids).issubset(contract.allowed_workspace_modules):
+            raise ContractViolation("workspace_module_not_allowed")

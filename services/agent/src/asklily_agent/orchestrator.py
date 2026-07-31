@@ -26,7 +26,6 @@ class OpticHealthOrchestrator:
                     "from": result.observed_from.isoformat(),
                     "to": result.observed_to.isoformat(),
                 },
-                "source": result.source,
             },
             focus_resource_id=focus_resource_id,
             query_id=f"fixture-query:{request_id}",
@@ -34,6 +33,7 @@ class OpticHealthOrchestrator:
         summary = "、".join(f"{health} {count}" for health, count in sorted(result.summary.items())) or "无匹配资源"
         return {
             "request_id": request_id,
+            "response_kind": "optic_health",
             "message": (
                 f"已调用受授权的 optic_health.query：在站点 {', '.join(sorted(scope.site_ids)) or '全部授权站点'} "
                 f"内得到 {summary}。来源为固定 Fixture，观测范围为 "
@@ -48,10 +48,47 @@ class OpticHealthOrchestrator:
         }
 
 
+class CapabilityCatalogOrchestrator:
+    """Compose the catalog-only Chat response after server authorization."""
+
+    def respond(
+        self,
+        question: str,
+        request_id: str,
+        catalog: Mapping[str, Any],
+        view_context: Mapping[str, Any],
+        presentation: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        entries = catalog["capabilities"]
+        ready = sum(1 for item in entries if item["status"]["code"] == "ready")
+        return {
+            "request_id": request_id,
+            "response_kind": "capability_catalog",
+            "message": f"当前可见能力 {len(entries)} 项，其中可用 {ready} 项。目录仅展示已注册、只读且在你的 Scope 内的信息。",
+            "question_acknowledged": question,
+            "sources": ["capability-catalog"],
+            "catalog": catalog,
+            "view_context": view_context,
+            "presentation": presentation,
+            "limitations": ["read_only", "no_real_connector", "no_write_operation"],
+        }
+
+
 def health_filter_for_question(question: str) -> frozenset[str]:
     """Map only explicit P2 demo terms to registered health states."""
 
     return _health_filter(question)
+
+
+def is_capability_catalog_question(question: str) -> bool:
+    """Recognize only the approved deterministic catalog intents before optic routing."""
+    normalized = question.casefold()
+    asks_what_is_available = any(token in normalized for token in ("能做什么", "可以做什么", "有哪些能力", "能力中心"))
+    asks_optic_source = "光模块" in normalized and any(token in normalized for token in ("来源", "数据来自", "数据从哪", "哪里来"))
+    asks_monitoring_explanation = any(token in normalized for token in ("zabbix", "prometheus")) and any(
+        token in normalized for token in ("为什么", "为何", "不能", "不可", "查询不了")
+    )
+    return asks_what_is_available or asks_optic_source or asks_monitoring_explanation
 
 
 def _health_filter(question: str) -> frozenset[str]:

@@ -55,20 +55,61 @@ export type ViewContext = {
   query_id: string | null;
 };
 
-export type ChatResult = {
+export type PresentationModule = { module_id: string; view_id: string };
+export type PresentationDirective = { mode: "chat" | "work"; modules: PresentationModule[] };
+
+export type CapabilityStatus = {
+  code: "ready" | "not_configured" | "unavailable" | "disabled" | "scope_not_allowed";
+  reason_code: string | null;
+};
+
+export type CapabilityCatalogItem = {
+  capability_id: string;
+  display_name: string;
+  summary: string;
+  category: string;
+  status: CapabilityStatus;
+  data_sources: DataSourceState[];
+  verification_level: string;
+  read_only: boolean;
+  limitations: string[];
+  next_actions: Array<{ kind: "chat"; question: string }>;
+};
+
+export type CapabilityCatalog = {
+  declared_environment: "fixture" | "test" | "production";
+  capabilities: CapabilityCatalogItem[];
+};
+
+export type CapabilityCatalogPayload = {
+  catalog: CapabilityCatalog;
+  presentation: PresentationDirective;
+  view_context: ViewContext;
+};
+
+export type CapabilityCatalogResponse = { request_id: string; catalog_version: string } & CapabilityCatalogPayload;
+
+type ChatResultBase = {
   request_id: string;
   message: string;
   question_acknowledged: string;
   sources: string[];
   view_context: ViewContext;
   limitations: string[];
-  optic_health: OpticHealthQuery;
   presentation: PresentationDirective;
   conversation_id?: string;
 };
 
-export type PresentationModule = { module_id: string; view_id: string };
-export type PresentationDirective = { mode: "chat" | "work"; modules: PresentationModule[] };
+export type OpticHealthChatResult = ChatResultBase & {
+  response_kind: "optic_health";
+  optic_health: OpticHealthQuery;
+};
+
+export type CapabilityCatalogChatResult = ChatResultBase & CapabilityCatalogPayload & {
+  response_kind: "capability_catalog";
+};
+
+export type ChatResult = OpticHealthChatResult | CapabilityCatalogChatResult;
 export type Conversation = { conversation_id: string; title: string; updated_at: string };
 export type ConversationMessage = { author: "user" | "assistant"; body: string; source_label: string | null; limitation_label: string | null; created_at: string };
 export type ConversationDetail = Conversation & { messages: ConversationMessage[] };
@@ -139,7 +180,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const platformApi = {
   session: () => request<Session>("/v1/session"),
-  capabilities: () => request<{ request_id: string; capabilities: Capability[] }>("/v1/capabilities"),
+  capabilityCatalog: () => request<CapabilityCatalogResponse>("/v1/capability-catalog"),
   validateOpticView: (scope: Scope, filters: Record<string, unknown>) =>
     request<{ request_id: string; view_context: ViewContext }>("/v1/views/context", {
       method: "POST",

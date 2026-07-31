@@ -17,6 +17,7 @@ from .models import (
     Scope,
     ToolContract,
     ViewContext,
+    ViewContract,
 )
 
 __all__ = [
@@ -35,5 +36,6 @@ __all__ = [
     "Resource",
     "Scope",
     "ToolContract",
+    "ViewContract",
     "ViewContext",
 ]
