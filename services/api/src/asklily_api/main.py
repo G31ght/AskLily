@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import uuid4
 
-from asklily_agent import OpticHealthOrchestrator, health_filter_for_question
+from asklily_agent import (
+    CapabilityCatalogOrchestrator,
+    OpticHealthOrchestrator,
+    health_filter_for_question,
+    is_capability_catalog_question,
+)
 from asklily_contracts import (
     AuditEvent,
     CapabilityManifest,
@@ -14,6 +20,7 @@ from asklily_contracts import (
     Scope,
     ToolContract,
     ViewContext,
+    ViewContract,
 )
 from asklily_domain import (
     OPTIC_RULE_VERSION,
@@ -35,12 +42,16 @@ app = FastAPI(title="AskLily Unified Runtime API", version="0.6.0")
 
 OPTIC_TOOL_ID = "optic_health.query"
 OPTIC_VIEW_ID = "optic_health"
+CAPABILITY_CATALOG_TOOL_ID = "capability_catalog.read"
+CAPABILITY_CATALOG_VIEW_ID = "capability_catalog"
+CATALOG_VERSION = "1.0.0"
 ALLOWED_HEALTH = frozenset({"healthy", "critical", "warning", "recovered", "unknown"})
 
 # A future model Skill may select only from this server-owned presentation
 # registry.  It cannot supply arbitrary components, query parameters or data.
 PRESENTATION_MODULES: dict[str, dict[str, str]] = {
     "optic-health-overview": {"module_id": "optic-health-overview", "view_id": OPTIC_VIEW_ID},
+    "capability-catalog-overview": {"module_id": "capability-catalog-overview", "view_id": CAPABILITY_CATALOG_VIEW_ID},
 }
 MANAGEABLE_CAPABILITIES = frozenset({"optic-health"})
 
@@ -124,7 +135,7 @@ FIXTURE_IDENTITIES: dict[str, tuple[str, Scope]] = {
 
 REGISTRY = PlatformRegistry()
 REGISTRY.register_tool(ToolContract("platform.status", "1.0.0", "platform", "read", "1.0.0", "1.0.0"))
-REGISTRY.register_view("platform_status")
+REGISTRY.register_view(ViewContract("platform_status", "1.0.0"))
 REGISTRY.register_capability(
     CapabilityManifest(
         "platform-foundation",
@@ -135,20 +146,22 @@ REGISTRY.register_capability(
         ("platform.status",),
         ("platform_status",),
         ("no_business_capability", "no_real_data", "no_model_provider"),
+        "平台基础能力", "受控只读平台骨架与契约状态。", "平台", "verified_skeleton", "现在可以做什么？",
     )
 )
 REGISTRY.register_tool(ToolContract("monitoring_source.readiness", "1.0.0", "platform", "read", "1.0.0", "1.0.0"))
-REGISTRY.register_view("monitoring_source_readiness")
+REGISTRY.register_view(ViewContract("monitoring_source_readiness", "1.0.0"))
 REGISTRY.register_capability(
     CapabilityManifest(
         "monitoring-source-readiness", "1.0.0", "platform", "mock_candidate",
         tuple(item.source_id for item in RUNTIME_CONFIG.sources if item.kind in {"zabbix", "prometheus"}),
         ("monitoring_source.readiness",), ("monitoring_source_readiness",),
-        ("no_network_io", "no_credentials", "no_real_connector", "no_write_operation"),
+        ("no_network_io", "no_secret_material", "no_real_connector", "no_write_operation"),
+        "监控来源就绪度", "仅显示已声明监控来源的无网络预检状态。", "来源透明", "preflight_only", "为什么 Zabbix 不能查询？", True,
     )
 )
 REGISTRY.register_tool(ToolContract(OPTIC_TOOL_ID, "1.0.0", "optic-health", "read", "1.0.0", "1.0.0"))
-REGISTRY.register_view(OPTIC_VIEW_ID)
+REGISTRY.register_view(ViewContract(OPTIC_VIEW_ID, "1.0.0", frozenset({"health", "time_range"}), frozenset({"optic-health-overview"})))
 REGISTRY.register_capability(
     CapabilityManifest(
         "optic-health",
@@ -159,10 +172,22 @@ REGISTRY.register_capability(
         (OPTIC_TOOL_ID,),
         (OPTIC_VIEW_ID,),
         ("fixture_l0_l1_only", "no_real_connector", "no_write_operation"),
+        "光模块健康", "基于受控 Fixture 的只读光模块健康查询。", "网络健康", "fixture_l0_l1", "查看当前光模块健康异常", True,
+    )
+)
+REGISTRY.register_tool(ToolContract(CAPABILITY_CATALOG_TOOL_ID, "1.0.0", "platform", "read", "1.0.0", "1.0.0"))
+REGISTRY.register_view(ViewContract(CAPABILITY_CATALOG_VIEW_ID, "1.0.0", frozenset(), frozenset({"capability-catalog-overview"})))
+REGISTRY.register_capability(
+    CapabilityManifest(
+        "capability-center", "1.0.0", "platform", "verified",
+        (), (CAPABILITY_CATALOG_TOOL_ID,), (CAPABILITY_CATALOG_VIEW_ID,),
+        ("read_only", "no_real_connector", "no_write_operation"),
+        "能力中心与来源透明", "展示已注册能力、来源状态与可见范围。", "平台", "registry_derived", "现在可以做什么？",
     )
 )
 AUDIT_EVENTS: list[AuditEvent] = []
 ORCHESTRATOR = OpticHealthOrchestrator()
+CATALOG_ORCHESTRATOR = CapabilityCatalogOrchestrator()
 LOCAL_IDENTITIES = LocalIdentityStore(default_database_path())
 SESSION_COOKIE = "asklily_local_session"
 
@@ -340,14 +365,101 @@ def _run_optic_query(
     return result
 
 
-def _default_presentation() -> dict[str, object]:
-    """Return the safe no-model default for the natural-language response.
+def _server_presentation(view_id: str, module_ids: tuple[str, ...]) -> dict[str, object]:
+    """Create and validate a server-owned Workspace presentation directive."""
+    try:
+        REGISTRY.validate_presentation_modules(view_id, module_ids)
+    except ContractViolation as exc:  # A programming/configuration defect must fail closed.
+        raise RuntimeError(str(exc)) from exc
+    return {
+        "mode": "work",
+        "modules": [PRESENTATION_MODULES[module_id] for module_id in module_ids],
+    }
 
-    P5A intentionally leaves this in Chat Mode.  A later trusted Skill adapter
-    may return ``mode=work`` and an ordered subset of PRESENTATION_MODULES only
-    after its tool calls have completed and the server has validated its result.
-    """
-    return {"mode": "chat", "modules": []}
+
+def _catalog_sources(manifest: CapabilityManifest) -> tuple[DataSource, ...]:
+    """Resolve sources only through the registered capability and P6 runtime state."""
+    if manifest.capability_id == "monitoring-source-readiness":
+        return tuple(item for item in RUNTIME_CONFIG.sources if item.kind in {"zabbix", "prometheus"})
+    return tuple(item for item in RUNTIME_CONFIG.sources if manifest.capability_id in item.capability_ids)
+
+
+def _catalog_status(
+    manifest: CapabilityManifest, sources: tuple[DataSource, ...]
+) -> dict[str, str | None]:
+    if not LOCAL_IDENTITIES.capability_enabled(manifest.capability_id):
+        return {"code": "disabled", "reason_code": "capability_disabled"}
+    if not sources:
+        if manifest.requires_data_source:
+            return {"code": "not_configured", "reason_code": "data_source_not_configured"}
+        return {"code": "ready", "reason_code": None}
+    states = [item.public_state() for item in sources]
+    if all(state["connection_state"] == "disabled" for state in states):
+        return {"code": "disabled", "reason_code": "data_source_disabled"}
+    if any(state["connection_state"] == "ready" for state in states):
+        return {"code": "ready", "reason_code": None}
+    reason = next((state["reason_code"] for state in states if state["reason_code"]), "data_source_unavailable")
+    return {"code": "unavailable", "reason_code": str(reason)}
+
+
+def _catalog_entries(scope: Scope, is_project_admin: bool) -> list[dict[str, object]]:
+    """Project Registry and P6 public state into a caller-safe catalog."""
+    entries: list[dict[str, object]] = []
+    allowed_sites = None if is_project_admin or not scope.site_ids else scope.site_ids
+    for manifest in REGISTRY.capabilities.values():
+        sources = _catalog_sources(manifest)
+        # An operator must not learn that a source-backed capability exists
+        # outside their site scope. Source-less registered platform capabilities
+        # remain visible because they carry no site-scoped data.
+        if sources and allowed_sites and not any(source.visible_site_ids & allowed_sites for source in sources):
+            continue
+        states = [
+            source.public_state(allowed_sites)
+            for source in sources
+        ]
+        entries.append(
+            {
+                "capability_id": manifest.capability_id,
+                "display_name": manifest.display_name,
+                "summary": manifest.summary,
+                "category": manifest.category,
+                "status": _catalog_status(manifest, sources),
+                "data_sources": states,
+                "read_only": True,
+                "verification_level": manifest.verification_level,
+                "limitations": list(manifest.limitations),
+                "next_actions": [{"kind": "chat", "question": manifest.next_action}],
+            }
+        )
+    return entries
+
+
+def _capability_catalog_response(
+    actor: str,
+    scope: Scope,
+    request_id: str,
+    *,
+    is_project_admin: bool,
+) -> dict[str, object]:
+    try:
+        REGISTRY.authorize_tool(CAPABILITY_CATALOG_TOOL_ID, scope)
+    except ContractViolation as exc:
+        _audit(actor, "capability_catalog.read", "denied", request_id, scope, tool_id=CAPABILITY_CATALOG_TOOL_ID, reason=str(exc))
+        raise HTTPException(403, detail={"code": str(exc), "request_id": request_id}) from exc
+    context = REGISTRY.validate_view_context(
+        ViewContext(CAPABILITY_CATALOG_VIEW_ID, CATALOG_VERSION, scope, {}), scope
+    )
+    _audit(actor, "capability_catalog.read", "allowed", request_id, scope, tool_id=CAPABILITY_CATALOG_TOOL_ID)
+    return {
+        "request_id": request_id,
+        "catalog_version": CATALOG_VERSION,
+        "view_context": _view_dict(context),
+        "presentation": _server_presentation(CAPABILITY_CATALOG_VIEW_ID, ("capability-catalog-overview",)),
+        "catalog": {
+            "declared_environment": RUNTIME_CONFIG.deployment_environment,
+            "capabilities": _catalog_entries(scope, is_project_admin),
+        },
+    }
 
 
 @app.get("/health")
@@ -439,9 +551,25 @@ def session(request: Request, x_asklily_role: str = Header(default="operator")) 
 @app.get("/v1/capabilities")
 def capabilities(request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
     request_id = _request_id(request)
-    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
-    _audit(actor, "capability_catalog.read", "allowed", request_id, scope)
-    return {"request_id": request_id, "capabilities": [_manifest_dict(item) for item in REGISTRY.capabilities.values()]}
+    actor, scope, local = _request_identity(request, x_asklily_role, request_id)
+    return _capability_catalog_response(
+        actor,
+        scope,
+        request_id,
+        is_project_admin=(local.role if local is not None else x_asklily_role) == "project-admin",
+    )
+
+
+@app.get("/v1/capability-catalog")
+def capability_catalog(request: Request, x_asklily_role: str = Header(default="operator")) -> dict[str, object]:
+    request_id = _request_id(request)
+    actor, scope, local = _request_identity(request, x_asklily_role, request_id)
+    return _capability_catalog_response(
+        actor,
+        scope,
+        request_id,
+        is_project_admin=(local.role if local is not None else x_asklily_role) == "project-admin",
+    )
 
 
 @app.get("/v1/data-sources")
@@ -541,14 +669,60 @@ def chat(payload: ChatInput, request: Request, x_asklily_role: str = Header(defa
         "chat.read",
     )
     _audit(actor, "chat.read", "allowed", request_id, scope)
-    result = _run_optic_query(
-        scope,
-        actor,
-        request_id,
-        health_filter=health_filter_for_question(payload.question),
-    )
-    response = dict(ORCHESTRATOR.respond(payload.question, scope, request_id, result))
-    response["presentation"] = _default_presentation()
+    if is_capability_catalog_question(payload.question):
+        catalog = _capability_catalog_response(
+            actor,
+            scope,
+            request_id,
+            is_project_admin=(local.role if local is not None else x_asklily_role) == "project-admin",
+        )
+        response = dict(
+            CATALOG_ORCHESTRATOR.respond(
+                payload.question,
+                request_id,
+                cast(dict[str, Any], catalog["catalog"]),
+                cast(dict[str, Any], catalog["view_context"]),
+                cast(dict[str, Any], catalog["presentation"]),
+            )
+        )
+        conversation_source = "capability-catalog"
+        conversation_limitations = "read_only,no_real_connector,no_write_operation"
+    else:
+        result = _run_optic_query(
+            scope,
+            actor,
+            request_id,
+            health_filter=health_filter_for_question(payload.question),
+        )
+        response = dict(ORCHESTRATOR.respond(payload.question, scope, request_id, result))
+        raw_context = cast(dict[str, Any], response["view_context"])
+        context = REGISTRY.validate_view_context(
+            ViewContext(
+                str(raw_context["view_id"]),
+                str(raw_context["version"]),
+                scope,
+                cast(dict[str, object], raw_context["filters"]),
+                cast(str | None, raw_context["focus_resource_id"]),
+                cast(str | None, raw_context["query_id"]),
+            ),
+            scope,
+        )
+        _, source_scope = _source_for_capability("optic-health", actor, context.scope, request_id)
+        response["view_context"] = _view_dict(
+            ViewContext(
+                context.view_id,
+                context.version,
+                source_scope,
+                context.filters,
+                context.focus_resource_id,
+                context.query_id,
+            )
+        )
+        response["presentation"] = _server_presentation(
+            OPTIC_VIEW_ID, ("optic-health-overview",)
+        )
+        conversation_source = result.source
+        conversation_limitations = "fixture_l0_l1_only,no_real_connector,no_write_operation"
     if local is not None:
         try:
             conversation_id = LOCAL_IDENTITIES.create_or_append_conversation(
@@ -556,8 +730,8 @@ def chat(payload: ChatInput, request: Request, x_asklily_role: str = Header(defa
                 payload.conversation_id,
                 payload.question,
                 str(response["message"]),
-                result.source,
-                "fixture_l0_l1_only,no_real_connector,no_write_operation",
+                conversation_source,
+                conversation_limitations,
             )
         except IdentityError as exc:
             raise HTTPException(404, detail={"code": str(exc), "request_id": request_id}) from exc

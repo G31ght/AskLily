@@ -36,4 +36,26 @@ describe("platform API client", () => {
       expect.objectContaining({ headers: { "Content-Type": "application/json" }})
     );
   });
+
+  it("loads the server-authorized capability catalog without client-supplied scope or module", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        request_id: "req-catalog",
+        catalog_version: "1.0.0",
+        view_context: { view_id: "capability_catalog", version: "1.0.0", scope: {}, filters: {}, focus_resource_id: null, query_id: null },
+        presentation: { mode: "work", modules: [{ module_id: "capability-catalog-overview", view_id: "capability_catalog" }] },
+        catalog: { declared_environment: "fixture", capabilities: [] }
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await platformApi.capabilityCatalog();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/capability-catalog",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" }})
+    );
+  });
 });

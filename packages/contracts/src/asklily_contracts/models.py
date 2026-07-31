@@ -160,6 +160,16 @@ class ViewContext:
 
 
 @dataclass(frozen=True)
+class ViewContract:
+    """A server-registered workspace view and its exact safe surface."""
+
+    view_id: str
+    version: str
+    allowed_filter_keys: frozenset[str] = field(default_factory=frozenset)
+    allowed_workspace_modules: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
 class CapabilityManifest:
     """Authoritative capability catalog entry. Owner: Capability Registry."""
 
@@ -171,6 +181,12 @@ class CapabilityManifest:
     tool_ids: tuple[str, ...]
     view_ids: tuple[str, ...]
     limitations: tuple[str, ...]
+    display_name: str = ""
+    summary: str = ""
+    category: str = ""
+    verification_level: str = "not_verified"
+    next_action: str = ""
+    requires_data_source: bool = False
 
 
 @dataclass(frozen=True)

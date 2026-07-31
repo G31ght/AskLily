@@ -2,11 +2,16 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AdminApp } from "./AdminApp";
 import { ADMIN_PATH, isAdminPath } from "./routes";
-import { ApiFailure, ChatResult, Conversation, ConversationMessage, Health, LocalIdentity, OpticHealthQuery, PresentationModule, Session, platformApi } from "./api";
+import { ApiFailure, CapabilityCatalogPayload, ChatResult, Conversation, ConversationMessage, Health, LocalIdentity, OpticHealthQuery, PresentationModule, Session, platformApi } from "./api";
 import "./styles.css";
 
 const HEALTH_LABELS: Record<Health, string> = { healthy: "正常", critical: "严重", warning: "告警", recovered: "已恢复", unknown: "数据缺失" };
 const PARTICLE_QUESTION = "哪些光模块需要关注？";
+const REGISTERED_VIEW_VERSIONS = { optic_health: "1.0.0", capability_catalog: "1.0.0" } as const;
+
+function hasRegisteredView(payload: CapabilityCatalogPayload, viewId: "capability_catalog") {
+  return payload.view_context.view_id === viewId && payload.view_context.version === REGISTERED_VIEW_VERSIONS[viewId];
+}
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -15,6 +20,7 @@ function App() {
   const [chat, setChat] = useState<ChatResult | null>(null);
   const [savedMessages, setSavedMessages] = useState<ConversationMessage[]>([]);
   const [opticHealth, setOpticHealth] = useState<OpticHealthQuery | null>(null);
+  const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalogPayload | null>(null);
   const [question, setQuestion] = useState("查看当前光模块健康异常");
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [workMode, setWorkMode] = useState(false);
@@ -31,7 +37,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = () => void Promise.all([platformApi.session(), platformApi.opticHealth(), platformApi.capabilities()])
+  const refresh = () => void Promise.all([platformApi.session(), platformApi.opticHealth()])
     .then(async ([nextSession, result]) => {
       setSession(nextSession); setOpticHealth(result.query);
       if (nextSession.identity.authenticated) {
@@ -95,19 +101,31 @@ function App() {
     if (!nextQuestion.trim()) return;
     setError(null);
     void platformApi.chat(nextQuestion, conversationId).then((result) => {
-      setChat(result); setSavedMessages([]); setOpticHealth(result.optic_health); setWorkMode(result.presentation.mode === "work"); setConversationId(result.conversation_id); setQuestion("");
+      setChat(result); setSavedMessages([]); setWorkMode(result.presentation.mode === "work"); setConversationId(result.conversation_id); setQuestion("");
+      if (result.response_kind === "optic_health") {
+        setOpticHealth(result.optic_health); setCapabilityCatalog(null);
+      } else {
+        setCapabilityCatalog(result);
+      }
       if (result.conversation_id) refreshHistory();
     }).catch(showError);
   }
 
   function submitChat(event: FormEvent<HTMLFormElement>) { event.preventDefault(); ask(question); }
 
-  function signOut() { void platformApi.logout().then(() => { setIdentity(null); setConversations([]); setConversationId(undefined); setChat(null); setSavedMessages([]); refresh(); }).catch(showError); }
-  function newChat() { setConversationId(undefined); setChat(null); setSavedMessages([]); setQuestion(""); setWorkMode(false); }
+  function openCapabilityCenter() {
+    setError(null);
+    void platformApi.capabilityCatalog().then((result) => {
+      setCapabilityCatalog(result); setChat(null); setSavedMessages([]); setConversationId(undefined); setWorkMode(result.presentation.mode === "work");
+    }).catch(showError);
+  }
+
+  function signOut() { void platformApi.logout().then(() => { setIdentity(null); setConversations([]); setConversationId(undefined); setChat(null); setSavedMessages([]); setCapabilityCatalog(null); refresh(); }).catch(showError); }
+  function newChat() { setConversationId(undefined); setChat(null); setSavedMessages([]); setCapabilityCatalog(null); setQuestion(""); setWorkMode(false); }
   function openConversation(nextConversationId: string) {
     setError(null);
     void platformApi.conversation(nextConversationId).then(({ conversation }) => {
-      setConversationId(conversation.conversation_id); setChat(null); setSavedMessages(conversation.messages); setQuestion(""); setWorkMode(false);
+      setConversationId(conversation.conversation_id); setChat(null); setSavedMessages(conversation.messages); setCapabilityCatalog(null); setQuestion(""); setWorkMode(false);
     }).catch(showError);
   }
   function requestConversationDeletion(item: Conversation) {
@@ -129,21 +147,26 @@ function App() {
   if (!session) return <main className="loading" role="alert">服务不可用：{error ?? "unknown"}</main>;
 
   const compactRail = workMode || railCollapsed;
+  const rawCatalogPayload: CapabilityCatalogPayload | null = chat?.response_kind === "capability_catalog" ? chat : capabilityCatalog;
+  const catalogPayload = rawCatalogPayload && hasRegisteredView(rawCatalogPayload, "capability_catalog") ? rawCatalogPayload : null;
+  const opticPresentation = chat?.response_kind === "optic_health" && chat.view_context.view_id === "optic_health" && chat.view_context.version === REGISTERED_VIEW_VERSIONS.optic_health ? chat.presentation.modules : undefined;
+  const workspaceModules = catalogPayload?.presentation.modules ?? opticPresentation ?? [];
   return <main className={["shell", workMode && "work", railCollapsed ? "rail-collapsed" : "rail-expanded", compactRail && "rail-compact"].filter(Boolean).join(" ")}>
     <aside className="rail">
       <div className="rail-top"><div className="brand"><span>◉</span><span className="rail-copy">AskLily</span></div><button className="rail-toggle" type="button" aria-label={compactRail ? "展开工具栏" : "收起工具栏"} aria-pressed={compactRail} onClick={() => setRailCollapsed((value) => !value)}>{compactRail ? "›" : "‹"}</button></div>
       <button className="new" onClick={newChat}><span aria-hidden="true">+</span><span className="new-label rail-copy">新建对话</span></button>
+      <button className="capability-center-link" type="button" aria-label="打开能力中心" aria-current={catalogPayload ? "page" : undefined} onClick={openCapabilityCenter}><span aria-hidden="true">◇</span><span className="rail-copy">能力中心</span></button>
       <p className="rail-title">最近对话</p>
       <div className="history">{conversations.length ? conversations.map((item) => <div className="history-entry" key={item.conversation_id} ref={conversationMenuId === item.conversation_id ? historyMenuRef : null}><button className={conversationId === item.conversation_id ? "history-item active" : "history-item"} onClick={() => openConversation(item.conversation_id)} onContextMenu={(event) => { event.preventDefault(); setAccountMenuOpen(false); setConversationMenuId(item.conversation_id); }}><span className="history-icon" aria-hidden="true">◫</span><span className="history-title rail-copy">{item.title}</span><small className="history-time rail-copy">{new Date(item.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></button>{conversationMenuId === item.conversation_id && <div className="history-menu" role="menu" aria-label="对话操作"><button role="menuitem" onClick={() => requestConversationDeletion(item)}>删除对话</button></div>}</div>) : <p className="muted rail-copy">暂无已保存对话</p>}</div>
       <div className="account" ref={accountMenuRef}><button className="account-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)} onContextMenu={(event) => { event.preventDefault(); setAccountMenuOpen(true); }}><span className="avatar">{(identity?.display_name ?? session.identity.display_name).slice(0, 1).toUpperCase()}</span><span className="account-details rail-copy">{identity?.display_name ?? session.identity.display_name}<small>{session.identity.role} · 本地账号</small></span></button>{accountMenuOpen && <div className="account-menu" role="menu">{session.identity.role === "project-admin" && ADMIN_PATH && <button role="menuitem" onClick={() => { if (ADMIN_PATH) window.location.assign(ADMIN_PATH); }}>管理后台</button>}<button role="menuitem" onClick={() => { setAccountMenuOpen(false); signOut(); }}>退出</button></div>}</div>
     </aside>
     <section className={!chat && !savedMessages.length ? "conversation idle" : "conversation"}>
-      <header><span className="eyebrow">ASKLILY · {session.runtime.declared_environment.toUpperCase()} · {session.runtime.data_sources.map((item) => `${item.kind} ${item.data_level}`).join(" / ") || "SOURCE NOT CONFIGURED"}</span></header>
+      <header><span className="eyebrow">ASKLILY · {session.runtime.declared_environment.toUpperCase()} · {session.runtime.data_sources.map((item) => `${item.kind} ${item.data_level}`).join(" / ") || "SOURCE NOT CONFIGURED"}</span><button className="mobile-capability-center-link" type="button" aria-label="打开能力中心" aria-current={catalogPayload ? "page" : undefined} onClick={openCapabilityCenter}>能力中心</button></header>
       {error && <p className="error" role="alert">请求未完成：{error}</p>}
       {!chat && !savedMessages.length ? <Welcome stage={welcomeStage} onAsk={ask} /> : chat ? <article className="answer"><p className="bubble">{chat.question_acknowledged}</p><p>{chat.message}</p><p className="meta">来源：{chat.sources.join("、")} · 限制：{chat.limitations.join("、")}</p></article> : <SavedConversation messages={savedMessages} />}
       <form className="composer" onSubmit={submitChat}><textarea aria-label="向 AskLily 提问" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="向 AskLily 提问…"/><button type="submit">↑</button></form>
     </section>
-    {opticHealth && <section className="workbench" aria-label="Work Mode" aria-hidden={!workMode}><header><span>工作台 / Work Mode</span><span className="badge">严格只读 · Fixture</span></header><WorkspaceModules modules={chat?.presentation.modules ?? [{ module_id: "optic-health-overview", view_id: "optic_health" }]} query={opticHealth} /></section>}
+    {workspaceModules.length > 0 && <section className="workbench" aria-label="Work Mode" aria-hidden={!workMode}><header><span>工作台 / Work Mode</span><span className="badge">严格只读 · {catalogPayload?.catalog.declared_environment ?? session.runtime.declared_environment}</span></header><WorkspaceModules modules={workspaceModules} query={opticHealth} catalog={catalogPayload?.catalog} onAsk={ask} /></section>}
     {conversationPendingDeletion && <div className="confirm-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-conversation-title"><p className="eyebrow">对话操作</p><h2 id="delete-conversation-title">删除这段对话？</h2><p>“{conversationPendingDeletion.title}”及其消息将从当前账号的本地记录中移除，且无法恢复。</p><div className="confirm-actions"><button type="button" disabled={deletingConversation} onClick={() => setConversationPendingDeletion(null)}>取消</button><button className="danger" type="button" disabled={deletingConversation} onClick={deleteConversation}>{deletingConversation ? "正在删除…" : "确认删除"}</button></div></section></div>}
   </main>;
 }
@@ -332,7 +355,35 @@ function seeded(index: number, salt: number) { const value = Math.sin(index * 92
 
 function OpticModule({ query }: { query: OpticHealthQuery }) { return <article className="module"><h2>光模块健康概览</h2><p className="meta">{query.source} · 规则 {query.rule_version}</p><div className="summary">{Object.entries(query.summary).map(([key, value]) => <span key={key}>{HEALTH_LABELS[key as Health]} <b>{value}</b></span>)}</div><table><thead><tr><th>资源</th><th>站点</th><th>健康</th><th>原因</th></tr></thead><tbody>{query.records.map((record) => <tr key={record.resource.resource_id}><td>{record.resource.display_name}</td><td>{record.resource.site_id}</td><td>{HEALTH_LABELS[record.assessment.health]}</td><td>{record.assessment.reason_codes.join("、") || "-"}</td></tr>)}</tbody></table></article>; }
 
-function WorkspaceModules({ modules, query }: { modules: PresentationModule[]; query: OpticHealthQuery }) { return <>{modules.map((module) => module.module_id === "optic-health-overview" && module.view_id === "optic_health" ? <OpticModule key={module.module_id} query={query} /> : <article className="module" key={module.module_id}><h2>未注册展示模块</h2><p className="meta">{module.module_id}</p></article>)}</>; }
+const CAPABILITY_STATUS_LABELS = {
+  ready: "可用",
+  not_configured: "未配置",
+  unavailable: "暂不可用",
+  disabled: "已停用",
+  scope_not_allowed: "当前范围不可用"
+} as const;
+
+function CapabilityCatalogModule({ catalog, onAsk }: { catalog: NonNullable<CapabilityCatalogPayload["catalog"]>; onAsk: (question: string) => void }) {
+  return <article className="module capability-catalog">
+    <header className="capability-catalog-header"><div><p className="eyebrow">CAPABILITY CENTER</p><h2>能力中心与来源透明页</h2><p className="meta">已按当前账号范围投影；仅展示服务端已授权的只读能力和公开来源状态。</p></div><span className="badge">{catalog.declared_environment}</span></header>
+    {catalog.capabilities.length ? <div className="capability-cards">{catalog.capabilities.map((capability) => <section className="capability-card" key={capability.capability_id}>
+      <header><div><p className="capability-category">{capability.category}</p><h3>{capability.display_name}</h3></div><span className={`capability-status status-${capability.status.code}`}>{CAPABILITY_STATUS_LABELS[capability.status.code]}</span></header>
+      <p>{capability.summary}</p>
+      <dl className="capability-details"><div><dt>验证等级</dt><dd>{capability.verification_level}</dd></div><div><dt>操作方式</dt><dd>{capability.read_only ? "严格只读" : "以服务端声明为准"}</dd></div>{capability.status.reason_code && <div><dt>状态原因</dt><dd>{capability.status.reason_code}</dd></div>}</dl>
+      <section className="source-transparency" aria-label={`${capability.display_name} 的来源透明状态`}><h4>来源透明状态</h4>{capability.data_sources.length ? <ul>{capability.data_sources.map((source) => <li key={source.source_id}><strong>{source.source_id}</strong><span>{source.kind} · {source.declared_environment} · {source.data_level}</span><span>连接：{source.connection_state}{source.reason_code ? `（${source.reason_code}）` : ""}</span></li>)}</ul> : <p className="muted">未声明可公开来源。</p>}</section>
+      {capability.limitations.length > 0 && <p className="capability-limitations">限制：{capability.limitations.join("、")}</p>}
+      {capability.next_actions.length > 0 && <div className="capability-actions">{capability.next_actions.map((action, index) => action.kind === "chat" && action.question.trim() ? <button type="button" key={`${capability.capability_id}-${index}`} onClick={() => onAsk(action.question)}>询问：{action.question}</button> : null)}</div>}
+    </section>)}</div> : <section className="capability-empty"><h3>当前范围暂无可展示能力</h3><p>没有已授权的能力或公开来源状态可供展示。</p></section>}
+  </article>;
+}
+
+function WorkspaceModules({ modules, query, catalog, onAsk }: { modules: PresentationModule[]; query: OpticHealthQuery | null; catalog: CapabilityCatalogPayload["catalog"] | undefined; onAsk: (question: string) => void }) {
+  return <>{modules.map((module) => {
+    if (module.module_id === "optic-health-overview" && module.view_id === "optic_health" && query) return <OpticModule key={module.module_id} query={query} />;
+    if (module.module_id === "capability-catalog-overview" && module.view_id === "capability_catalog" && catalog) return <CapabilityCatalogModule key={module.module_id} catalog={catalog} onAsk={onAsk} />;
+    return null;
+  })}</>;
+}
 
 function SavedConversation({ messages }: { messages: ConversationMessage[] }) { return <article className="answer saved-conversation">{messages.map((message, index) => <section key={`${message.created_at}-${index}`}><p className={message.author === "user" ? "bubble" : ""}>{message.body}</p>{message.author === "assistant" && <p className="meta">来源：{message.source_label ?? "-"} · 限制：{message.limitation_label ?? "-"}</p>}</section>)}</article>; }
 

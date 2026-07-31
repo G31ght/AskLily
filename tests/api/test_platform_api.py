@@ -33,6 +33,21 @@ def test_unknown_tool_and_view_are_rejected() -> None:
     assert response.json()["detail"]["code"] == "view_not_registered"
 
 
+def test_registered_views_fail_closed_for_unregistered_versions_and_filters() -> None:
+    wrong_version = client.post(
+        "/v1/views/context",
+        json={"view_id": "optic_health", "version": "2.0.0", "scope": {"project_id": "demo-project"}},
+    )
+    assert wrong_version.status_code == 403
+    assert wrong_version.json()["detail"]["code"] == "view_version_not_registered"
+    wrong_filter = client.post(
+        "/v1/views/context",
+        json={"view_id": "optic_health", "scope": {"project_id": "demo-project"}, "filters": {"source": "fixture"}},
+    )
+    assert wrong_filter.status_code == 403
+    assert wrong_filter.json()["detail"]["code"] == "view_filter_not_allowed"
+
+
 def test_chat_uses_authorized_fixture_tool_and_returns_legal_view_context() -> None:
     response = client.post(
         "/v1/chat",
@@ -121,6 +136,75 @@ def test_session_reports_declared_data_source_context_without_a_frontend_switch(
         "visible_site_ids": ["site-a"], "connection_state": "ready",
         "reason_code": None, "last_checked_at": None, "config_revision": "fixture-v1",
     }]
+
+
+def test_capability_catalog_is_registry_derived_scope_projected_and_sensitive_field_free() -> None:
+    response = client.get("/v1/capability-catalog", headers={"X-AskLily-Role": "operator", "X-Request-ID": "catalog-operator"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_id"] == "catalog-operator"
+    assert body["catalog_version"] == "1.0.0"
+    assert body["view_context"]["view_id"] == "capability_catalog"
+    assert body["view_context"]["version"] == "1.0.0"
+    assert body["presentation"] == {"mode": "work", "modules": [{"module_id": "capability-catalog-overview", "view_id": "capability_catalog"}]}
+    entries = body["catalog"]["capabilities"]
+    assert body["catalog"]["declared_environment"] == "fixture"
+    monitoring = next(item for item in entries if item["capability_id"] == "monitoring-source-readiness")
+    assert monitoring["status"] == {"code": "not_configured", "reason_code": "data_source_not_configured"}
+    assert monitoring["data_sources"] == []
+    optic = next(item for item in entries if item["capability_id"] == "optic-health")
+    assert optic["data_sources"][0]["visible_site_ids"] == ["site-a"]
+    assert optic["next_actions"] == [{"kind": "chat", "question": "查看当前光模块健康异常"}]
+    rendered = str(body)
+    for sensitive_name in ("endpoint", "token", "credential", "promql", "label", "raw_observation"):
+        assert sensitive_name not in rendered
+
+
+def test_catalog_omits_scope_blocked_sources_for_operator_but_projects_for_admin(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(main, "LOCAL_IDENTITIES", LocalIdentityStore(tmp_path / "runtime.sqlite3"))
+    source = DataSource(
+        "fixture-site-b", "fixture", True, True, "L0_L1", ("optic-health",),
+        frozenset({"site-b"}), "fixture", "fixture-site-b-v1",
+    )
+    monkeypatch.setattr(main, "RUNTIME_CONFIG", RuntimeConfig("1.0.0", "fixture", (source,)))
+    operator = TestClient(main.app).get("/v1/capabilities", headers={"X-AskLily-Role": "operator"}).json()
+    assert "optic-health" not in {item["capability_id"] for item in operator["catalog"]["capabilities"]}
+    admin = TestClient(main.app).get("/v1/capabilities", headers={"X-AskLily-Role": "project-admin"}).json()
+    optic = next(item for item in admin["catalog"]["capabilities"] if item["capability_id"] == "optic-health")
+    assert optic["data_sources"][0]["visible_site_ids"] == ["site-b"]
+
+
+def test_catalog_reports_unverified_monitoring_source_as_preflight_only(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(main, "LOCAL_IDENTITIES", LocalIdentityStore(tmp_path / "runtime.sqlite3"))
+    source = DataSource(
+        "zabbix-preflight", "zabbix", True, True, "unverified", ("optic-health",),
+        frozenset({"site-a"}), "production", "customer-v1",
+    )
+    monkeypatch.setattr(main, "RUNTIME_CONFIG", RuntimeConfig("1.0.0", "production", (source,)))
+    body = TestClient(main.app).get("/v1/capability-catalog").json()
+    monitoring = next(item for item in body["catalog"]["capabilities"] if item["capability_id"] == "monitoring-source-readiness")
+    assert monitoring["status"] == {"code": "unavailable", "reason_code": "connector_not_validated"}
+    assert monitoring["verification_level"] == "preflight_only"
+    assert monitoring["data_sources"][0]["kind"] == "zabbix"
+
+
+def test_catalog_uses_existing_capability_override_for_disabled_status(tmp_path, monkeypatch) -> None:
+    store = LocalIdentityStore(tmp_path / "runtime.sqlite3")
+    store.set_capability_enabled("optic-health", False, "test-admin")
+    monkeypatch.setattr(main, "LOCAL_IDENTITIES", store)
+    body = TestClient(main.app).get("/v1/capability-catalog").json()
+    optic = next(item for item in body["catalog"]["capabilities"] if item["capability_id"] == "optic-health")
+    assert optic["status"] == {"code": "disabled", "reason_code": "capability_disabled"}
+
+
+def test_catalog_chat_routes_before_optic_health_and_returns_legal_workspace_context() -> None:
+    response = client.post("/v1/chat", json={"question": "光模块健康的数据来自哪里？"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response_kind"] == "capability_catalog"
+    assert body["view_context"]["view_id"] == "capability_catalog"
+    assert body["presentation"]["modules"] == [{"module_id": "capability-catalog-overview", "view_id": "capability_catalog"}]
+    assert "optic_health" not in body
 
 
 def test_missing_or_unverified_real_source_never_falls_back_to_fixture(tmp_path, monkeypatch) -> None:

@@ -19,6 +19,7 @@ from asklily_contracts import (  # noqa: E402
     Scope,
     ToolContract,
     ViewContext,
+    ViewContract,
 )
 from asklily_domain import PlatformRegistry  # noqa: E402
 
@@ -34,7 +35,9 @@ class PlatformContractTests(unittest.TestCase):
         self.registry.register_tool(
             ToolContract("platform.status", "1.0.0", "platform", "read", "1.0.0", "1.0.0")
         )
-        self.registry.register_view("platform_status")
+        self.registry.register_view(
+            ViewContract("platform_status", "1.0.0", frozenset({"period"}), frozenset({"status-overview"}))
+        )
 
     def test_scope_cannot_expand_sites_or_actions(self) -> None:
         with self.assertRaisesRegex(ContractViolation, "scope_site_not_allowed"):
@@ -51,6 +54,21 @@ class PlatformContractTests(unittest.TestCase):
             self.registry.validate_view_context(
                 ViewContext("unknown", "1.0.0", self.scope, {}), self.scope
             )
+
+    def test_registered_view_requires_exact_version_allowed_filters_and_modules(self) -> None:
+        with self.assertRaisesRegex(ContractViolation, "view_version_not_registered"):
+            self.registry.validate_view_context(ViewContext("platform_status", "2.0.0", self.scope, {}), self.scope)
+        with self.assertRaisesRegex(ContractViolation, "view_filter_not_allowed"):
+            self.registry.validate_view_context(ViewContext("platform_status", "1.0.0", self.scope, {"site": "site-a"}), self.scope)
+        with self.assertRaisesRegex(ContractViolation, "workspace_module_not_allowed"):
+            self.registry.validate_view_context(
+                ViewContext("platform_status", "1.0.0", self.scope, {}),
+                self.scope,
+                ("unregistered-module",),
+            )
+        context = self.registry.validate_view_context(ViewContext("platform_status", "1.0.0", self.scope, {"period": "day"}), self.scope)
+        self.assertEqual(context.version, "1.0.0")
+        self.registry.validate_presentation_modules("platform_status", ("status-overview",))
 
     def test_audit_event_links_request_and_query(self) -> None:
         event = AuditEvent(
