@@ -109,7 +109,10 @@ export type CapabilityCatalogChatResult = ChatResultBase & CapabilityCatalogPayl
   response_kind: "capability_catalog";
 };
 
-export type ChatResult = OpticHealthChatResult | CapabilityCatalogChatResult;
+export type ResourceSearchChatResult = ChatResultBase & { response_kind: "resource_search" };
+export type ResourceDetailChatResult = ChatResultBase & { response_kind: "resource_detail" };
+
+export type ChatResult = OpticHealthChatResult | CapabilityCatalogChatResult | ResourceSearchChatResult | ResourceDetailChatResult;
 export type Conversation = { conversation_id: string; title: string; updated_at: string };
 export type ConversationMessage = { author: "user" | "assistant"; body: string; source_label: string | null; limitation_label: string | null; created_at: string };
 export type ConversationDetail = Conversation & { messages: ConversationMessage[] };
@@ -142,6 +145,37 @@ export type OpticHealthQuery = {
   observed_to: string;
   rule_version: string;
   records: OpticHealthRecord[];
+};
+
+export type ResourceType = "site" | "device" | "interface" | "optic_module";
+export type ResourceHealthSummary = { health: Health; reason_codes: string[]; rule_version: string } | null;
+
+/** Public, server-Scope-projected resource information only. */
+export type ResourceSummary = {
+  resource_id: string;
+  display_name: string;
+  resource_type: ResourceType;
+  site_id: string | null;
+  summary: string;
+  health: ResourceHealthSummary;
+};
+
+export type ResourceSearchQuery = {
+  items: ResourceSummary[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_more: boolean;
+  source: string;
+  limitations: string[];
+};
+
+export type ResourceDetail = {
+  resource: ResourceSummary & { parent_resource_id: string | null };
+  related: ResourceSummary[];
+  source: string;
+  data_level: "L0_L1" | "unverified";
+  limitations: string[];
 };
 
 export class ApiFailure extends Error {
@@ -202,6 +236,18 @@ export const platformApi = {
     const suffix = parameters.size ? `?${parameters.toString()}` : "";
     return request<{ request_id: string; query: OpticHealthQuery }>(`/v1/optic-health${suffix}`);
   },
+  resources: (filters: { query?: string; site_id?: string; resource_type?: ResourceType; health?: Health | Health[]; page?: number } = {}) => {
+    const parameters = new URLSearchParams();
+    if (filters.query) parameters.set("query", filters.query);
+    if (filters.site_id) parameters.set("site_id", filters.site_id);
+    if (filters.resource_type) parameters.set("resource_type", filters.resource_type);
+    if (filters.health) for (const health of Array.isArray(filters.health) ? filters.health : [filters.health]) parameters.append("health", health);
+    if (filters.page) parameters.set("page", String(filters.page));
+    const suffix = parameters.size ? `?${parameters.toString()}` : "";
+    return request<{ request_id: string; query: ResourceSearchQuery }>(`/v1/resources${suffix}`);
+  },
+  resourceDetail: (resourceId: string) => request<{ request_id: string; detail: ResourceDetail }>(`/v1/resources/${encodeURIComponent(resourceId)}`),
+  resourceSuggestions: (query: string) => request<{ request_id: string; suggestions: ResourceSummary[] }>(`/v1/resources/suggestions?query=${encodeURIComponent(query)}`),
   adminOverview: () => request<AdminOverview>("/v1/admin/overview"),
   adminCapabilities: () => request<{ capabilities: Capability[] }>("/v1/admin/capabilities"),
   setCapabilityState: (capabilityId: string, enabled: boolean) => request<{ capability: Capability }>(`/v1/admin/capabilities/${capabilityId}/state`, { method: "PATCH", body: JSON.stringify({ enabled }) }),

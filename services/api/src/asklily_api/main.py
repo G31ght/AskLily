@@ -10,8 +10,10 @@ from uuid import uuid4
 from asklily_agent import (
     CapabilityCatalogOrchestrator,
     OpticHealthOrchestrator,
+    ResourceExplorerOrchestrator,
     health_filter_for_question,
     is_capability_catalog_question,
+    resource_explorer_intent,
 )
 from asklily_contracts import (
     AuditEvent,
@@ -24,9 +26,14 @@ from asklily_contracts import (
 )
 from asklily_domain import (
     OPTIC_RULE_VERSION,
+    RESOURCE_EXPLORER_SOURCE,
     OpticHealthQuery,
     PlatformRegistry,
     query_optic_health,
+    related_resources,
+    resource_detail,
+    search_resources,
+    validate_resource_query,
 )
 from asklily_monitoring import assess_monitoring_source_preflight
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
@@ -44,6 +51,9 @@ OPTIC_TOOL_ID = "optic_health.query"
 OPTIC_VIEW_ID = "optic_health"
 CAPABILITY_CATALOG_TOOL_ID = "capability_catalog.read"
 CAPABILITY_CATALOG_VIEW_ID = "capability_catalog"
+RESOURCE_EXPLORER_TOOL_ID = "resource_explorer.read"
+RESOURCE_SEARCH_VIEW_ID = "resource_search"
+RESOURCE_DETAIL_VIEW_ID = "resource_detail"
 CATALOG_VERSION = "1.0.0"
 ALLOWED_HEALTH = frozenset({"healthy", "critical", "warning", "recovered", "unknown"})
 
@@ -52,8 +62,10 @@ ALLOWED_HEALTH = frozenset({"healthy", "critical", "warning", "recovered", "unkn
 PRESENTATION_MODULES: dict[str, dict[str, str]] = {
     "optic-health-overview": {"module_id": "optic-health-overview", "view_id": OPTIC_VIEW_ID},
     "capability-catalog-overview": {"module_id": "capability-catalog-overview", "view_id": CAPABILITY_CATALOG_VIEW_ID},
+    "resource-search-results": {"module_id": "resource-search-results", "view_id": RESOURCE_SEARCH_VIEW_ID},
+    "resource-detail-overview": {"module_id": "resource-detail-overview", "view_id": RESOURCE_DETAIL_VIEW_ID},
 }
-MANAGEABLE_CAPABILITIES = frozenset({"optic-health"})
+MANAGEABLE_CAPABILITIES = frozenset({"optic-health", "resource-explorer"})
 
 
 class ScopeInput(BaseModel):
@@ -185,9 +197,40 @@ REGISTRY.register_capability(
         "能力中心与来源透明", "展示已注册能力、来源状态与可见范围。", "平台", "registry_derived", "现在可以做什么？",
     )
 )
+REGISTRY.register_tool(ToolContract(RESOURCE_EXPLORER_TOOL_ID, "1.0.0", "resource-explorer", "read", "1.0.0", "1.0.0"))
+REGISTRY.register_view(
+    ViewContract(
+        RESOURCE_SEARCH_VIEW_ID,
+        "1.0.0",
+        frozenset({"query", "site_id", "resource_type", "health", "page"}),
+        frozenset({"resource-search-results"}),
+    )
+)
+REGISTRY.register_view(
+    ViewContract(RESOURCE_DETAIL_VIEW_ID, "1.0.0", frozenset(), frozenset({"resource-detail-overview"}))
+)
+REGISTRY.register_capability(
+    CapabilityManifest(
+        "resource-explorer",
+        "1.0.0",
+        "resource-explorer",
+        "demo_candidate",
+        tuple(item.source_id for item in RUNTIME_CONFIG.sources if "resource-explorer" in item.capability_ids),
+        (RESOURCE_EXPLORER_TOOL_ID,),
+        (RESOURCE_SEARCH_VIEW_ID, RESOURCE_DETAIL_VIEW_ID),
+        ("fixture_l0_l1_only", "no_real_connector", "no_write_operation", "no_resource_mutation"),
+        "资源检索与详情工作台",
+        "基于受控 Fixture 的只读资源检索、详情与已有光模块健康摘要。",
+        "资源目录",
+        "fixture_l0_l1",
+        "检索当前可见资源",
+        True,
+    )
+)
 AUDIT_EVENTS: list[AuditEvent] = []
 ORCHESTRATOR = OpticHealthOrchestrator()
 CATALOG_ORCHESTRATOR = CapabilityCatalogOrchestrator()
+RESOURCE_EXPLORER_ORCHESTRATOR = ResourceExplorerOrchestrator()
 LOCAL_IDENTITIES = LocalIdentityStore(default_database_path())
 SESSION_COOKIE = "asklily_local_session"
 
@@ -363,6 +406,160 @@ def _run_optic_query(
         query_id=f"fixture-query:{request_id}",
     )
     return result
+
+
+def _resource_source_scope(scope: Scope, actor: str, request_id: str) -> tuple[DataSource, Scope]:
+    """Authorize the registered P5G Tool before accessing its Fixture directory."""
+    _require_capability_enabled("resource-explorer", actor, scope, request_id)
+    try:
+        REGISTRY.authorize_tool(RESOURCE_EXPLORER_TOOL_ID, scope)
+    except ContractViolation as exc:
+        _audit(actor, "resource_explorer.read", "denied", request_id, scope, tool_id=RESOURCE_EXPLORER_TOOL_ID, reason=str(exc))
+        raise HTTPException(403, detail={"code": str(exc), "request_id": request_id}) from exc
+    source, source_scope = _source_for_capability("resource-explorer", actor, scope, request_id)
+    _audit(
+        actor,
+        "resource_explorer.read",
+        "allowed",
+        request_id,
+        scope,
+        tool_id=RESOURCE_EXPLORER_TOOL_ID,
+        query_id=f"fixture-resource:{request_id}",
+    )
+    return source, source_scope
+
+
+def _resource_health_summaries(scope: Scope, health_filter: frozenset[str]) -> dict[str, dict[str, object]]:
+    """Reference the established P2 conclusion without exposing facts or events."""
+    query = query_optic_health(scope, health_filter=health_filter)
+    return {
+        record.resource.resource_id: {
+            "health": record.assessment.health,
+            "reason_codes": list(record.assessment.reason_codes),
+            "rule_version": record.assessment.rule_version,
+        }
+        for record in query.records
+    }
+
+
+def _resource_summary(record: object, health_summaries: dict[str, dict[str, object]]) -> dict[str, object]:
+    """Serialize the narrowly-defined public summary shared by search and details."""
+    resource = cast(Any, record).resource
+    return {
+        "resource_id": resource.resource_id,
+        "display_name": resource.display_name,
+        "resource_type": resource.resource_type,
+        "site_id": resource.site_id,
+        "summary": cast(Any, record).summary,
+        "health": health_summaries.get(resource.resource_id),
+    }
+
+
+def _parent_resource_id(record: object) -> str | None:
+    resource = cast(Any, record).resource
+    related = cast(tuple[str, ...], cast(Any, record).related_resource_ids)
+    if resource.resource_type == "site":
+        return None
+    if resource.resource_type == "device":
+        return next((item for item in related if item.startswith("site-")), None)
+    if resource.resource_type == "interface":
+        return next((item for item in related if item.startswith("leaf-")), None)
+    if resource.resource_type == "optic_module":
+        return next((item for item in related if item.startswith("interface-")), None)
+    return None
+
+
+def _resource_search_response(
+    scope: Scope,
+    actor: str,
+    request_id: str,
+    *,
+    query: str | None,
+    site_id: str | None,
+    resource_type: str | None,
+    health_filter: frozenset[str],
+    page: int,
+) -> dict[str, object]:
+    source, source_scope = _resource_source_scope(scope, actor, request_id)
+    health_summaries = _resource_health_summaries(source_scope, health_filter)
+    try:
+        result = search_resources(
+            source_scope,
+            query=query,
+            site_id=site_id,
+            resource_type=resource_type,
+            resource_ids=frozenset(health_summaries) if health_filter else None,
+            page=page,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": str(exc), "request_id": request_id}) from exc
+    return {
+        "request_id": request_id,
+        "query": {
+            "items": [_resource_summary(record, health_summaries) for record in result.items],
+            "page": result.page,
+            "page_size": result.page_size,
+            "total": result.total,
+            "has_more": result.has_more,
+            "source": RESOURCE_EXPLORER_SOURCE,
+            "limitations": ["fixture_l0_l1_only", "no_real_connector", "no_write_operation"],
+        },
+    }
+
+
+def _resource_detail_response(scope: Scope, actor: str, request_id: str, resource_id: str) -> dict[str, object]:
+    source, source_scope = _resource_source_scope(scope, actor, request_id)
+    record = resource_detail(source_scope, resource_id)
+    # Deliberately identical for a non-existent ID and an existing ID hidden by Scope.
+    if record is None:
+        raise HTTPException(404, detail={"code": "resource_not_available", "request_id": request_id})
+    health_summaries = _resource_health_summaries(source_scope, frozenset())
+    focus = _resource_summary(record, health_summaries)
+    focus["parent_resource_id"] = _parent_resource_id(record)
+    return {
+        "request_id": request_id,
+        "detail": {
+            "resource": focus,
+            "related": [_resource_summary(item, health_summaries) for item in related_resources(record, source_scope)],
+            "source": RESOURCE_EXPLORER_SOURCE,
+            "data_level": source.data_level,
+            "limitations": ["fixture_l0_l1_only", "no_real_connector", "no_write_operation"],
+        },
+    }
+
+
+def _validate_resource_view_filters(filters: dict[str, object], request_id: str) -> None:
+    """Validate filter values as well as Registry keys before a Workspace fetch."""
+    query = filters.get("query")
+    site_id = filters.get("site_id")
+    resource_type = filters.get("resource_type")
+    health = filters.get("health", [])
+    page = filters.get("page", 1)
+    if query is not None and (not isinstance(query, str) or _invalid_resource_query(query)):
+        raise HTTPException(422, detail={"code": "resource_search_query_invalid", "request_id": request_id})
+    if site_id is not None and (not isinstance(site_id, str) or not site_id):
+        raise HTTPException(422, detail={"code": "resource_site_filter_invalid", "request_id": request_id})
+    if resource_type is not None and not isinstance(resource_type, str):
+        raise HTTPException(422, detail={"code": "resource_type_invalid", "request_id": request_id})
+    if not isinstance(health, list) or not all(isinstance(item, str) for item in health):
+        raise HTTPException(422, detail={"code": "resource_health_filter_invalid", "request_id": request_id})
+    _health_filter(cast(list[str], health), request_id)
+    if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+        raise HTTPException(422, detail={"code": "resource_search_pagination_invalid", "request_id": request_id})
+    try:
+        # The directory owns the type allowlist and page-size rule; this call is
+        # validation-only and has no side effect or source access.
+        search_resources(Scope("demo-project"), resource_type=resource_type, page=page)
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": str(exc), "request_id": request_id}) from exc
+
+
+def _invalid_resource_query(query: str) -> bool:
+    try:
+        validate_resource_query(query)
+    except ValueError:
+        return True
+    return False
 
 
 def _server_presentation(view_id: str, module_ids: tuple[str, ...]) -> dict[str, object]:
@@ -634,6 +831,65 @@ def optic_health_suggestions(
     }
 
 
+@app.get("/v1/resources")
+def resources(
+    request: Request,
+    query: str | None = Query(default=None, max_length=100),
+    site_id: str | None = Query(default=None, max_length=100),
+    resource_type: str | None = Query(default=None, max_length=100),
+    health: list[str] = Query(default=[]),
+    page: int = Query(default=1, ge=1),
+    x_asklily_role: str = Header(default="operator"),
+) -> dict[str, object]:
+    """Server-side paginated, Scope-projected public resource directory."""
+    request_id = _request_id(request)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    return _resource_search_response(
+        scope,
+        actor,
+        request_id,
+        query=query,
+        site_id=site_id,
+        resource_type=resource_type,
+        health_filter=_health_filter(health, request_id),
+        page=page,
+    )
+
+
+@app.get("/v1/resources/suggestions")
+def resource_suggestions(
+    request: Request,
+    query: str = Query(min_length=1, max_length=100),
+    x_asklily_role: str = Header(default="operator"),
+) -> dict[str, object]:
+    """Return at most ten visible public summaries; there is no global lookup."""
+    request_id = _request_id(request)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    response = _resource_search_response(
+        scope,
+        actor,
+        request_id,
+        query=query,
+        site_id=None,
+        resource_type=None,
+        health_filter=frozenset(),
+        page=1,
+    )
+    items = cast(dict[str, Any], response["query"])["items"]
+    return {"request_id": request_id, "suggestions": items[:10]}
+
+
+@app.get("/v1/resources/{resource_id}")
+def resource_by_id(
+    resource_id: str,
+    request: Request,
+    x_asklily_role: str = Header(default="operator"),
+) -> dict[str, object]:
+    request_id = _request_id(request)
+    actor, scope, _ = _request_identity(request, x_asklily_role, request_id)
+    return _resource_detail_response(scope, actor, request_id, resource_id)
+
+
 @app.post("/v1/views/context")
 def validate_view_context(
     payload: ViewContextInput, request: Request, x_asklily_role: str = Header(default="operator")
@@ -642,6 +898,10 @@ def validate_view_context(
     actor, server_scope, _ = _request_identity(request, x_asklily_role, request_id)
     if payload.view_id == OPTIC_VIEW_ID:
         _require_capability_enabled("optic-health", actor, server_scope, request_id)
+    if payload.view_id == RESOURCE_SEARCH_VIEW_ID:
+        if payload.focus_resource_id is not None:
+            raise HTTPException(403, detail={"code": "view_focus_not_allowed", "request_id": request_id})
+        _validate_resource_view_filters(payload.filters, request_id)
     try:
         context = REGISTRY.validate_view_context(
             ViewContext(payload.view_id, payload.version, payload.scope.as_contract(), payload.filters, payload.focus_resource_id),
@@ -652,6 +912,13 @@ def validate_view_context(
         raise HTTPException(403, detail={"code": str(exc), "request_id": request_id}) from exc
     if payload.view_id == OPTIC_VIEW_ID:
         _, data_source_scope = _source_for_capability("optic-health", actor, context.scope, request_id)
+        context = ViewContext(context.view_id, context.version, data_source_scope, context.filters, context.focus_resource_id, context.query_id)
+    if payload.view_id in {RESOURCE_SEARCH_VIEW_ID, RESOURCE_DETAIL_VIEW_ID}:
+        _, data_source_scope = _resource_source_scope(context.scope, actor, request_id)
+        if payload.view_id == RESOURCE_DETAIL_VIEW_ID:
+            if context.focus_resource_id is None or resource_detail(data_source_scope, context.focus_resource_id) is None:
+                # Do not allow a context-validation probe to distinguish hidden IDs.
+                raise HTTPException(404, detail={"code": "resource_not_available", "request_id": request_id})
         context = ViewContext(context.view_id, context.version, data_source_scope, context.filters, context.focus_resource_id, context.query_id)
     _audit(actor, "view.validate", "allowed", request_id, context.scope)
     return {"request_id": request_id, "view_context": _view_dict(context)}
@@ -687,6 +954,36 @@ def chat(payload: ChatInput, request: Request, x_asklily_role: str = Header(defa
         )
         conversation_source = "capability-catalog"
         conversation_limitations = "read_only,no_real_connector,no_write_operation"
+    elif (resource_intent := resource_explorer_intent(payload.question)) is not None:
+        _, resource_scope = _resource_source_scope(scope, actor, request_id)
+        if resource_intent.response_kind == "resource_detail":
+            if resource_intent.focus_resource_id is None or resource_detail(resource_scope, resource_intent.focus_resource_id) is None:
+                # A Chat request must not turn into a resource-enumeration oracle.
+                raise HTTPException(404, detail={"code": "resource_not_available", "request_id": request_id})
+        else:
+            try:
+                if resource_intent.query is not None:
+                    validate_resource_query(resource_intent.query)
+            except ValueError as exc:
+                raise HTTPException(422, detail={"code": str(exc), "request_id": request_id}) from exc
+        response = dict(RESOURCE_EXPLORER_ORCHESTRATOR.respond(payload.question, resource_scope, request_id, resource_intent))
+        raw_context = cast(dict[str, Any], response["view_context"])
+        context = REGISTRY.validate_view_context(
+            ViewContext(
+                str(raw_context["view_id"]),
+                str(raw_context["version"]),
+                resource_scope,
+                cast(dict[str, object], raw_context["filters"]),
+                cast(str | None, raw_context["focus_resource_id"]),
+                cast(str | None, raw_context["query_id"]),
+            ),
+            resource_scope,
+        )
+        response["view_context"] = _view_dict(context)
+        module_id = "resource-detail-overview" if context.view_id == RESOURCE_DETAIL_VIEW_ID else "resource-search-results"
+        response["presentation"] = _server_presentation(context.view_id, (module_id,))
+        conversation_source = RESOURCE_EXPLORER_SOURCE
+        conversation_limitations = "fixture_l0_l1_only,no_real_connector,no_write_operation"
     else:
         result = _run_optic_query(
             scope,

@@ -10,7 +10,7 @@
       "enabled": true,
       "read_only": true,
       "data_level": "L0_L1",
-      "capability_ids": ["optic-health"],
+      "capability_ids": ["optic-health", "resource-explorer"],
       "visible_site_ids": ["site-a", "site-b"],
       "config_revision": "fixture-v1"
     }

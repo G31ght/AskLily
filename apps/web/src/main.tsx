@@ -2,15 +2,38 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AdminApp } from "./AdminApp";
 import { ADMIN_PATH, isAdminPath } from "./routes";
-import { ApiFailure, CapabilityCatalogPayload, ChatResult, Conversation, ConversationMessage, Health, LocalIdentity, OpticHealthQuery, PresentationModule, Session, platformApi } from "./api";
+import { ApiFailure, CapabilityCatalogPayload, ChatResult, Conversation, ConversationMessage, Health, LocalIdentity, OpticHealthQuery, PresentationModule, ResourceDetail, ResourceSearchQuery, ResourceSummary, ResourceType, Session, platformApi } from "./api";
 import "./styles.css";
 
 const HEALTH_LABELS: Record<Health, string> = { healthy: "正常", critical: "严重", warning: "告警", recovered: "已恢复", unknown: "数据缺失" };
 const PARTICLE_QUESTION = "哪些光模块需要关注？";
-const REGISTERED_VIEW_VERSIONS = { optic_health: "1.0.0", capability_catalog: "1.0.0" } as const;
+const REGISTERED_VIEW_VERSIONS = { optic_health: "1.0.0", capability_catalog: "1.0.0", resource_search: "1.0.0", resource_detail: "1.0.0" } as const;
 
 function hasRegisteredView(payload: CapabilityCatalogPayload, viewId: "capability_catalog") {
   return payload.view_context.view_id === viewId && payload.view_context.version === REGISTERED_VIEW_VERSIONS[viewId];
+}
+
+type ResourceSearchFilters = { query?: string; site_id?: string; resource_type?: ResourceType; health?: Health[]; page?: number };
+const RESOURCE_TYPES: readonly ResourceType[] = ["site", "device", "interface", "optic_module"];
+
+function resourceSearchFilters(filters: Record<string, unknown>): ResourceSearchFilters {
+  const text = (key: string) => typeof filters[key] === "string" && filters[key].trim() ? filters[key] as string : undefined;
+  const resourceType = text("resource_type");
+  const rawHealth = filters.health;
+  const healthCandidates = Array.isArray(rawHealth) ? rawHealth : typeof rawHealth === "string" ? [rawHealth] : [];
+  const health = healthCandidates.filter((item): item is Health => typeof item === "string" && Object.hasOwn(HEALTH_LABELS, item));
+  const page = typeof filters.page === "number" && Number.isInteger(filters.page) && filters.page > 0 ? filters.page : undefined;
+  return {
+    query: text("query"),
+    site_id: text("site_id"),
+    resource_type: resourceType && RESOURCE_TYPES.includes(resourceType as ResourceType) ? resourceType as ResourceType : undefined,
+    health: health.length ? health : undefined,
+    page
+  };
+}
+
+function isRegisteredResourceResult(result: ChatResult, responseKind: "resource_search" | "resource_detail") {
+  return result.response_kind === responseKind && result.view_context.view_id === responseKind && result.view_context.version === REGISTERED_VIEW_VERSIONS[responseKind];
 }
 
 function App() {
@@ -21,6 +44,11 @@ function App() {
   const [savedMessages, setSavedMessages] = useState<ConversationMessage[]>([]);
   const [opticHealth, setOpticHealth] = useState<OpticHealthQuery | null>(null);
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalogPayload | null>(null);
+  const [resourceSearch, setResourceSearch] = useState<ResourceSearchQuery | null>(null);
+  const [resourceDetail, setResourceDetail] = useState<ResourceDetail | null>(null);
+  const [resourceFilters, setResourceFilters] = useState<ResourceSearchFilters>({});
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceFailure, setResourceFailure] = useState<string | null>(null);
   const [question, setQuestion] = useState("查看当前光模块健康异常");
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [workMode, setWorkMode] = useState(false);
@@ -83,6 +111,19 @@ function App() {
 
   function showError(reason: unknown) { setError(reason instanceof ApiFailure ? reason.code : "api_unavailable"); }
   function refreshHistory() { void platformApi.conversations().then((value) => setConversations(value.conversations)).catch(showError); }
+  function clearResourceWorkspace() { setResourceSearch(null); setResourceDetail(null); setResourceFilters({}); setResourceLoading(false); setResourceFailure(null); }
+  function loadResourceSearch(filters: ResourceSearchFilters) {
+    setResourceLoading(true); setResourceFailure(null); setResourceDetail(null); setResourceFilters(filters);
+    void platformApi.resources(filters).then(({ query }) => setResourceSearch(query)).catch((reason) => {
+      setResourceSearch(null); setResourceFailure(reason instanceof ApiFailure ? reason.code : "resource_query_unavailable");
+    }).finally(() => setResourceLoading(false));
+  }
+  function openResourceDetail(resourceId: string) {
+    setResourceLoading(true); setResourceFailure(null);
+    void platformApi.resourceDetail(resourceId).then(({ detail }) => setResourceDetail(detail)).catch((reason) => {
+      setResourceDetail(null); setResourceFailure(reason instanceof ApiFailure ? reason.code : "resource_not_available");
+    }).finally(() => setResourceLoading(false));
+  }
 
   function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); const username = String(data.get("username") || ""); const password = String(data.get("password") || "");
@@ -102,11 +143,11 @@ function App() {
     setError(null);
     void platformApi.chat(nextQuestion, conversationId).then((result) => {
       setChat(result); setSavedMessages([]); setWorkMode(result.presentation.mode === "work"); setConversationId(result.conversation_id); setQuestion("");
-      if (result.response_kind === "optic_health") {
-        setOpticHealth(result.optic_health); setCapabilityCatalog(null);
-      } else {
-        setCapabilityCatalog(result);
-      }
+      if (result.response_kind === "optic_health") { setOpticHealth(result.optic_health); setCapabilityCatalog(null); clearResourceWorkspace(); }
+      else if (result.response_kind === "capability_catalog") { setCapabilityCatalog(result); clearResourceWorkspace(); }
+      else if (isRegisteredResourceResult(result, "resource_search")) { setCapabilityCatalog(null); clearResourceWorkspace(); loadResourceSearch(resourceSearchFilters(result.view_context.filters)); }
+      else if (isRegisteredResourceResult(result, "resource_detail") && result.view_context.focus_resource_id) { setCapabilityCatalog(null); clearResourceWorkspace(); openResourceDetail(result.view_context.focus_resource_id); }
+      else { clearResourceWorkspace(); setResourceFailure("registered_view_required"); }
       if (result.conversation_id) refreshHistory();
     }).catch(showError);
   }
@@ -116,16 +157,17 @@ function App() {
   function openCapabilityCenter() {
     setError(null);
     void platformApi.capabilityCatalog().then((result) => {
-      setCapabilityCatalog(result); setChat(null); setSavedMessages([]); setConversationId(undefined); setWorkMode(result.presentation.mode === "work");
+      setCapabilityCatalog(result); clearResourceWorkspace(); setChat(null); setSavedMessages([]); setConversationId(undefined); setWorkMode(result.presentation.mode === "work");
     }).catch(showError);
   }
 
-  function signOut() { void platformApi.logout().then(() => { setIdentity(null); setConversations([]); setConversationId(undefined); setChat(null); setSavedMessages([]); setCapabilityCatalog(null); refresh(); }).catch(showError); }
-  function newChat() { setConversationId(undefined); setChat(null); setSavedMessages([]); setCapabilityCatalog(null); setQuestion(""); setWorkMode(false); }
+  function signOut() { void platformApi.logout().then(() => { setIdentity(null); setConversations([]); setConversationId(undefined); setChat(null); setSavedMessages([]); setCapabilityCatalog(null); clearResourceWorkspace(); refresh(); }).catch(showError); }
+  function newChat() { setConversationId(undefined); setChat(null); setSavedMessages([]); setCapabilityCatalog(null); clearResourceWorkspace(); setQuestion(""); setWorkMode(false); }
+  function closeWorkspace() { setWorkMode(false); setRailCollapsed(false); }
   function openConversation(nextConversationId: string) {
     setError(null);
     void platformApi.conversation(nextConversationId).then(({ conversation }) => {
-      setConversationId(conversation.conversation_id); setChat(null); setSavedMessages(conversation.messages); setCapabilityCatalog(null); setQuestion(""); setWorkMode(false);
+      setConversationId(conversation.conversation_id); setChat(null); setSavedMessages(conversation.messages); setCapabilityCatalog(null); clearResourceWorkspace(); setQuestion(""); setWorkMode(false);
     }).catch(showError);
   }
   function requestConversationDeletion(item: Conversation) {
@@ -150,7 +192,8 @@ function App() {
   const rawCatalogPayload: CapabilityCatalogPayload | null = chat?.response_kind === "capability_catalog" ? chat : capabilityCatalog;
   const catalogPayload = rawCatalogPayload && hasRegisteredView(rawCatalogPayload, "capability_catalog") ? rawCatalogPayload : null;
   const opticPresentation = chat?.response_kind === "optic_health" && chat.view_context.view_id === "optic_health" && chat.view_context.version === REGISTERED_VIEW_VERSIONS.optic_health ? chat.presentation.modules : undefined;
-  const workspaceModules = catalogPayload?.presentation.modules ?? opticPresentation ?? [];
+  const resourcePresentation = chat && (isRegisteredResourceResult(chat, "resource_search") || isRegisteredResourceResult(chat, "resource_detail")) ? chat.presentation.modules : undefined;
+  const workspaceModules = catalogPayload?.presentation.modules ?? opticPresentation ?? resourcePresentation ?? [];
   return <main className={["shell", workMode && "work", railCollapsed ? "rail-collapsed" : "rail-expanded", compactRail && "rail-compact"].filter(Boolean).join(" ")}>
     <aside className="rail">
       <div className="rail-top"><div className="brand"><span>◉</span><span className="rail-copy">AskLily</span></div><button className="rail-toggle" type="button" aria-label={compactRail ? "展开工具栏" : "收起工具栏"} aria-pressed={compactRail} onClick={() => setRailCollapsed((value) => !value)}>{compactRail ? "›" : "‹"}</button></div>
@@ -166,7 +209,7 @@ function App() {
       {!chat && !savedMessages.length ? <Welcome stage={welcomeStage} onAsk={ask} /> : chat ? <article className="answer"><p className="bubble">{chat.question_acknowledged}</p><p>{chat.message}</p><p className="meta">来源：{chat.sources.join("、")} · 限制：{chat.limitations.join("、")}</p></article> : <SavedConversation messages={savedMessages} />}
       <form className="composer" onSubmit={submitChat}><textarea aria-label="向 AskLily 提问" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="向 AskLily 提问…"/><button type="submit">↑</button></form>
     </section>
-    {workspaceModules.length > 0 && <section className="workbench" aria-label="Work Mode" aria-hidden={!workMode}><header><span>工作台 / Work Mode</span><span className="badge">严格只读 · {catalogPayload?.catalog.declared_environment ?? session.runtime.declared_environment}</span></header><WorkspaceModules modules={workspaceModules} query={opticHealth} catalog={catalogPayload?.catalog} onAsk={ask} /></section>}
+    {workspaceModules.length > 0 && <section className="workbench" aria-label="Work Mode" aria-hidden={!workMode}><header><span>工作台 / Work Mode</span><div className="workbench-header-actions"><span className="badge">严格只读 · {catalogPayload?.catalog.declared_environment ?? session.runtime.declared_environment}</span><button className="workbench-close" type="button" onClick={closeWorkspace}>关闭工作区</button></div></header><WorkspaceModules modules={workspaceModules} query={opticHealth} catalog={catalogPayload?.catalog} resourceSearch={resourceSearch} resourceDetail={resourceDetail} resourceLoading={resourceLoading} resourceFailure={resourceFailure} onAsk={ask} onPage={(page) => loadResourceSearch({ ...resourceFilters, page })} onOpenResource={openResourceDetail} /></section>}
     {conversationPendingDeletion && <div className="confirm-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-conversation-title"><p className="eyebrow">对话操作</p><h2 id="delete-conversation-title">删除这段对话？</h2><p>“{conversationPendingDeletion.title}”及其消息将从当前账号的本地记录中移除，且无法恢复。</p><div className="confirm-actions"><button type="button" disabled={deletingConversation} onClick={() => setConversationPendingDeletion(null)}>取消</button><button className="danger" type="button" disabled={deletingConversation} onClick={deleteConversation}>{deletingConversation ? "正在删除…" : "确认删除"}</button></div></section></div>}
   </main>;
 }
@@ -364,23 +407,66 @@ const CAPABILITY_STATUS_LABELS = {
 } as const;
 
 function CapabilityCatalogModule({ catalog, onAsk }: { catalog: NonNullable<CapabilityCatalogPayload["catalog"]>; onAsk: (question: string) => void }) {
+  const [expandedCapabilityId, setExpandedCapabilityId] = useState<string | null>(null);
+  const expandedCapability = catalog.capabilities.find((capability) => capability.capability_id === expandedCapabilityId) ?? null;
   return <article className="module capability-catalog">
     <header className="capability-catalog-header"><div><p className="eyebrow">CAPABILITY CENTER</p><h2>能力中心与来源透明页</h2><p className="meta">已按当前账号范围投影；仅展示服务端已授权的只读能力和公开来源状态。</p></div><span className="badge">{catalog.declared_environment}</span></header>
-    {catalog.capabilities.length ? <div className="capability-cards">{catalog.capabilities.map((capability) => <section className="capability-card" key={capability.capability_id}>
-      <header><div><p className="capability-category">{capability.category}</p><h3>{capability.display_name}</h3></div><span className={`capability-status status-${capability.status.code}`}>{CAPABILITY_STATUS_LABELS[capability.status.code]}</span></header>
-      <p>{capability.summary}</p>
-      <dl className="capability-details"><div><dt>验证等级</dt><dd>{capability.verification_level}</dd></div><div><dt>操作方式</dt><dd>{capability.read_only ? "严格只读" : "以服务端声明为准"}</dd></div>{capability.status.reason_code && <div><dt>状态原因</dt><dd>{capability.status.reason_code}</dd></div>}</dl>
-      <section className="source-transparency" aria-label={`${capability.display_name} 的来源透明状态`}><h4>来源透明状态</h4>{capability.data_sources.length ? <ul>{capability.data_sources.map((source) => <li key={source.source_id}><strong>{source.source_id}</strong><span>{source.kind} · {source.declared_environment} · {source.data_level}</span><span>连接：{source.connection_state}{source.reason_code ? `（${source.reason_code}）` : ""}</span></li>)}</ul> : <p className="muted">未声明可公开来源。</p>}</section>
-      {capability.limitations.length > 0 && <p className="capability-limitations">限制：{capability.limitations.join("、")}</p>}
-      {capability.next_actions.length > 0 && <div className="capability-actions">{capability.next_actions.map((action, index) => action.kind === "chat" && action.question.trim() ? <button type="button" key={`${capability.capability_id}-${index}`} onClick={() => onAsk(action.question)}>询问：{action.question}</button> : null)}</div>}
-    </section>)}</div> : <section className="capability-empty"><h3>当前范围暂无可展示能力</h3><p>没有已授权的能力或公开来源状态可供展示。</p></section>}
+    {catalog.capabilities.length ? <div className="capability-cards" aria-label="能力卡片列表">{catalog.capabilities.map((capability) => {
+      return <section className="capability-card" key={capability.capability_id}>
+        <button className="capability-card-trigger" type="button" aria-haspopup="dialog" aria-label={`打开 ${capability.display_name} 详情`} onClick={() => setExpandedCapabilityId(capability.capability_id)}>
+          <header><p className="capability-category">{capability.category}</p><h3>{capability.display_name}</h3></header>
+          <span className={`capability-status status-${capability.status.code}`}>{CAPABILITY_STATUS_LABELS[capability.status.code]}</span>
+        </button>
+      </section>;
+    })}</div> : <section className="capability-empty"><h3>当前范围暂无可展示能力</h3><p>没有已授权的能力或公开来源状态可供展示。</p></section>}
+    {expandedCapability && <div className="capability-overlay" role="presentation" onClick={() => setExpandedCapabilityId(null)}>
+      <section className="capability-expanded-card" role="dialog" aria-modal="true" aria-label={`${expandedCapability.display_name} 详情`} onClick={(event) => event.stopPropagation()}>
+        <header className="capability-expanded-header"><div><p className="capability-category">{expandedCapability.category}</p><h3>{expandedCapability.display_name}</h3><p className="capability-summary">{expandedCapability.summary}</p></div><div><span className={`capability-status status-${expandedCapability.status.code}`}>{CAPABILITY_STATUS_LABELS[expandedCapability.status.code]}</span><button className="capability-close" type="button" aria-label="关闭能力详情" onClick={() => setExpandedCapabilityId(null)}>×</button></div></header>
+        <dl className="capability-details"><div><dt>验证等级</dt><dd>{expandedCapability.verification_level}</dd></div><div><dt>操作方式</dt><dd>{expandedCapability.read_only ? "严格只读" : "以服务端声明为准"}</dd></div>{expandedCapability.status.reason_code && <div><dt>状态原因</dt><dd>{expandedCapability.status.reason_code}</dd></div>}</dl>
+        <section className="source-transparency" aria-label={`${expandedCapability.display_name} 的来源透明状态`}><h4>来源透明状态</h4>{expandedCapability.data_sources.length ? <ul>{expandedCapability.data_sources.map((source) => <li key={source.source_id}><strong>{source.source_id}</strong><span>{source.kind} · {source.declared_environment} · {source.data_level}</span><span>连接：{source.connection_state}{source.reason_code ? `（${source.reason_code}）` : ""}</span></li>)}</ul> : <p className="muted">未声明可公开来源。</p>}</section>
+        {expandedCapability.limitations.length > 0 && <p className="capability-limitations">限制：{expandedCapability.limitations.join("、")}</p>}
+        {expandedCapability.next_actions.length > 0 && <div className="capability-actions">{expandedCapability.next_actions.map((action, index) => action.kind === "chat" && action.question.trim() ? <button type="button" key={`${expandedCapability.capability_id}-${index}`} onClick={() => onAsk(action.question)}>询问：{action.question}</button> : null)}</div>}
+      </section>
+    </div>}
   </article>;
 }
 
-function WorkspaceModules({ modules, query, catalog, onAsk }: { modules: PresentationModule[]; query: OpticHealthQuery | null; catalog: CapabilityCatalogPayload["catalog"] | undefined; onAsk: (question: string) => void }) {
+const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = { site: "站点", device: "设备", interface: "接口", optic_module: "光模块（optic）" };
+
+function ResourceHealth({ item }: { item: ResourceSummary }) {
+  return item.health ? <span className={`resource-health health-${item.health.health}`}>{HEALTH_LABELS[item.health.health]}{item.health.reason_codes.length ? ` · ${item.health.reason_codes.join("、")}` : ""}</span> : <span className="resource-health health-unavailable">未引用健康结论</span>;
+}
+
+function ResourceSafeState({ code }: { code: string | null }) {
+  if (!code) return null;
+  const ambiguous = code === "resource_query_ambiguous";
+  return <section className="resource-safe-state" role="status"><h3>{ambiguous ? "需要更明确的检索条件" : "资源当前不可公开展示"}</h3><p>{ambiguous ? "请补充完整资源 ID、受控名称或当前可见站点。" : "资源不存在、当前范围不可访问或来源不可用时，系统不会暴露其名称或存在性。"}</p></section>;
+}
+
+function ResourceSearchModule({ query, loading, failure, onPage, onOpenResource }: { query: ResourceSearchQuery | null; loading: boolean; failure: string | null; onPage: (page: number) => void; onOpenResource: (resourceId: string) => void }) {
+  return <article className="module resource-explorer">
+    <header className="resource-module-header"><div><p className="eyebrow">RESOURCE EXPLORER</p><h2>资源检索</h2><p className="meta">仅显示服务端按当前范围投影的 Fixture 目录；不加载或枚举全部资源。</p></div><span className="badge">Fixture · L0/L1</span></header>
+    {loading && <p className="muted" role="status">正在获取受限资源视图…</p>}
+    <ResourceSafeState code={failure} />
+    {query && !loading && !failure && <><p className="resource-source">来源：{query.source} · 限制：{query.limitations.join("、") || "严格只读，演示数据"}</p>{query.items.length ? <div className="resource-results">{query.items.map((item) => <section className="resource-result" key={item.resource_id}><div><p className="resource-type">{RESOURCE_TYPE_LABELS[item.resource_type]}</p><h3>{item.display_name}</h3><p>{item.summary}</p><p className="meta">站点：{item.site_id ?? "-"} · ID：{item.resource_id}</p><ResourceHealth item={item} /></div><button type="button" onClick={() => onOpenResource(item.resource_id)} aria-label={`打开 ${item.display_name} 详情`}>打开详情</button></section>)}</div> : <section className="resource-safe-state"><h3>没有可展示的匹配资源</h3><p>请使用当前范围内的精确 ID、受控名称、站点或类型重新检索。</p></section>}{query.total > query.items.length && <nav className="resource-pagination" aria-label="资源结果分页"><button type="button" disabled={query.page <= 1} onClick={() => onPage(query.page - 1)}>上一页</button><span>第 {query.page} 页</span><button type="button" disabled={!query.has_more} onClick={() => onPage(query.page + 1)}>下一页</button></nav>}</>}
+  </article>;
+}
+
+function ResourceDetailModule({ detail, loading, failure, onOpenResource }: { detail: ResourceDetail | null; loading: boolean; failure: string | null; onOpenResource: (resourceId: string) => void }) {
+  return <article className="module resource-explorer resource-detail">
+    <header className="resource-module-header"><div><p className="eyebrow">RESOURCE DETAIL</p><h2>资源详情</h2><p className="meta">仅展示已有 Fixture 属性和已引用的健康摘要，不含 Observation 或 Event 原始事实。</p></div><span className="badge">严格只读</span></header>
+    {loading && <p className="muted" role="status">正在获取受限资源详情…</p>}
+    <ResourceSafeState code={failure} />
+    {detail && !loading && !failure && <><section className="resource-detail-overview"><div><p className="resource-type">{RESOURCE_TYPE_LABELS[detail.resource.resource_type]}</p><h3>{detail.resource.display_name}</h3><p>{detail.resource.summary}</p></div><dl><div><dt>稳定 ID</dt><dd>{detail.resource.resource_id}</dd></div><div><dt>所属站点</dt><dd>{detail.resource.site_id ?? "-"}</dd></div><div><dt>父级归属</dt><dd>{detail.resource.parent_resource_id ?? "-"}</dd></div><div><dt>数据级别</dt><dd>Fixture · {detail.data_level}</dd></div></dl><ResourceHealth item={detail.resource} /></section><p className="resource-source">来源：{detail.source} · 限制：{detail.limitations.join("、") || "演示数据；不提供原始事实"}</p>{detail.related.length ? <section className="resource-related"><h3>受控关联资源</h3><div>{detail.related.map((item) => <button key={item.resource_id} type="button" onClick={() => onOpenResource(item.resource_id)}><span>{item.display_name}</span><small>{RESOURCE_TYPE_LABELS[item.resource_type]} · {item.site_id ?? "-"}</small></button>)}</div></section> : null}<p className="resource-future">暂无已授权的后续调查入口。</p></>}
+  </article>;
+}
+
+function WorkspaceModules({ modules, query, catalog, resourceSearch, resourceDetail, resourceLoading, resourceFailure, onAsk, onPage, onOpenResource }: { modules: PresentationModule[]; query: OpticHealthQuery | null; catalog: CapabilityCatalogPayload["catalog"] | undefined; resourceSearch: ResourceSearchQuery | null; resourceDetail: ResourceDetail | null; resourceLoading: boolean; resourceFailure: string | null; onAsk: (question: string) => void; onPage: (page: number) => void; onOpenResource: (resourceId: string) => void }) {
   return <>{modules.map((module) => {
     if (module.module_id === "optic-health-overview" && module.view_id === "optic_health" && query) return <OpticModule key={module.module_id} query={query} />;
     if (module.module_id === "capability-catalog-overview" && module.view_id === "capability_catalog" && catalog) return <CapabilityCatalogModule key={module.module_id} catalog={catalog} onAsk={onAsk} />;
+    if (module.module_id === "resource-search-results" && module.view_id === "resource_search") return <><ResourceSearchModule key={module.module_id} query={resourceSearch} loading={resourceLoading} failure={resourceFailure} onPage={onPage} onOpenResource={onOpenResource} />{resourceDetail && <ResourceDetailModule key={`${module.module_id}-detail`} detail={resourceDetail} loading={false} failure={null} onOpenResource={onOpenResource} />}</>;
+    if (module.module_id === "resource-detail-overview" && module.view_id === "resource_detail") return <ResourceDetailModule key={module.module_id} detail={resourceDetail} loading={resourceLoading} failure={resourceFailure} onOpenResource={onOpenResource} />;
     return null;
   })}</>;
 }
