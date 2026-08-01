@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from asklily_contracts import Scope, ViewContext
 from asklily_domain import OpticHealthQuery
+
+
+@dataclass(frozen=True)
+class ResourceExplorerIntent:
+    """Small server-owned intent surface for the Fixture directory."""
+
+    response_kind: str
+    query: str | None = None
+    site_id: str | None = None
+    resource_type: str | None = None
+    health: frozenset[str] = frozenset()
+    focus_resource_id: str | None = None
 
 
 class OpticHealthOrchestrator:
@@ -74,6 +87,51 @@ class CapabilityCatalogOrchestrator:
         }
 
 
+class ResourceExplorerOrchestrator:
+    """Compose legal P5G workspace contexts without accepting client components."""
+
+    def respond(self, question: str, scope: Scope, request_id: str, intent: ResourceExplorerIntent) -> Mapping[str, Any]:
+        if intent.response_kind == "resource_detail":
+            context = ViewContext(
+                view_id="resource_detail",
+                version="1.0.0",
+                scope=scope,
+                filters={},
+                focus_resource_id=intent.focus_resource_id,
+                query_id=f"fixture-resource:{request_id}",
+            )
+            message = "已打开受授权的 Fixture 资源详情。详细信息仅限当前 Scope，且不包含原始监控事实。"
+        else:
+            filters: dict[str, Any] = {"page": 1}
+            if intent.query is not None:
+                filters["query"] = intent.query
+            if intent.site_id is not None:
+                filters["site_id"] = intent.site_id
+            if intent.resource_type is not None:
+                filters["resource_type"] = intent.resource_type
+            if intent.health:
+                filters["health"] = [
+                    value for value in ("critical", "warning", "unknown", "recovered", "healthy") if value in intent.health
+                ]
+            context = ViewContext(
+                view_id="resource_search",
+                version="1.0.0",
+                scope=scope,
+                filters=filters,
+                query_id=f"fixture-resource:{request_id}",
+            )
+            message = "已准备受授权的 Fixture 资源检索。工作台会仅在当前 Scope 内请求分页后的结构化摘要。"
+        return {
+            "request_id": request_id,
+            "response_kind": intent.response_kind,
+            "message": message,
+            "question_acknowledged": question,
+            "sources": ["fixture://resource-explorer/l0-l1-v1"],
+            "view_context": asdict(context),
+            "limitations": ["fixture_l0_l1_only", "no_real_connector", "no_write_operation"],
+        }
+
+
 def health_filter_for_question(question: str) -> frozenset[str]:
     """Map only explicit P2 demo terms to registered health states."""
 
@@ -89,6 +147,36 @@ def is_capability_catalog_question(question: str) -> bool:
         token in normalized for token in ("为什么", "为何", "不能", "不可", "查询不了")
     )
     return asks_what_is_available or asks_optic_source or asks_monitoring_explanation
+
+
+def resource_explorer_intent(question: str) -> ResourceExplorerIntent | None:
+    """Recognize only the three approved directory phrases before optic routing.
+
+    The parser intentionally maps no general language, regex, URL, path, or
+    cross-project syntax into a directory query.
+    """
+    normalized = " ".join(question.casefold().split())
+    if not normalized:
+        return None
+    focus = re.search(r"(?:打开|open)\s+([a-z0-9-]+)", normalized)
+    if focus is not None:
+        return ResourceExplorerIntent("resource_detail", focus_resource_id=focus.group(1))
+    if "site-a" in normalized and "光模块" in question and any(token in normalized for token in ("异常", "告警")):
+        return ResourceExplorerIntent(
+            "resource_search",
+            site_id="site-a",
+            resource_type="optic_module",
+            health=frozenset({"critical", "warning", "unknown"}),
+        )
+    if normalized in {"检索当前可见资源", "查询当前可见资源", "搜索当前可见资源"}:
+        return ResourceExplorerIntent("resource_search")
+    marker = next((item for item in ("查询", "搜索", "检索", "查 ", "搜 ") if item in normalized), None)
+    if marker is None:
+        return None
+    candidate = normalized.split(marker, 1)[1].strip(" ：:")
+    if not candidate or len(candidate) > 100 or not re.fullmatch(r"[\w\s\-/.]+", candidate, re.UNICODE):
+        return None
+    return ResourceExplorerIntent("resource_search", query=candidate)
 
 
 def _health_filter(question: str) -> frozenset[str]:

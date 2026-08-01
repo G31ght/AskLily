@@ -58,4 +58,32 @@ describe("platform API client", () => {
       expect.objectContaining({ headers: { "Content-Type": "application/json" }})
     );
   });
+
+  it("sends only controlled resource search filters and never supplies Scope or View metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ request_id: "req-resource", query: { items: [], page: 2, page_size: 10, total: 0, has_more: false, source: "fixture", limitations: [] } })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await platformApi.resources({ query: "leaf-b01", site_id: "site-a", resource_type: "optic_module", health: ["critical", "warning"], page: 2 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/resources?query=leaf-b01&site_id=site-a&resource_type=optic_module&health=critical&health=warning&page=2",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" }})
+    );
+  });
+
+  it("requests a selected resource detail by its server-returned ID only", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ request_id: "req-detail", detail: {} }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await platformApi.resourceDetail("optic-a-02");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/resources/optic-a-02",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" }})
+    );
+  });
 });

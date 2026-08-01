@@ -85,6 +85,91 @@ def test_optic_query_and_suggestions_never_leak_site_b_to_operator() -> None:
     ]
 
 
+def test_resource_directory_is_server_paginated_scope_safe_and_references_health_only() -> None:
+    response = client.get(
+        "/v1/resources",
+        params=[
+            ("site_id", "site-a"),
+            ("resource_type", "optic_module"),
+            ("health", "critical"),
+            ("health", "warning"),
+            ("health", "unknown"),
+        ],
+        headers={"X-AskLily-Role": "operator"},
+    )
+    assert response.status_code == 200
+    query = response.json()["query"]
+    assert query["page"] == 1
+    assert query["page_size"] == 20
+    assert query["total"] == 5
+    assert query["source"] == "fixture://resource-explorer/l0-l1-v1"
+    assert {item["resource_id"] for item in query["items"]} == {
+        "optic-a-02", "optic-a-03", "optic-a-04", "optic-a-06", "optic-a-07"
+    }
+    assert {item["health"]["health"] for item in query["items"]} == {"critical", "warning", "unknown"}
+    rendered = str(query)
+    for forbidden in ("observation", "event", "rx_dbm", "tx_dbm", "temperature_c", "evidence_refs"):
+        assert forbidden not in rendered
+
+
+def test_resource_detail_and_suggestions_have_no_scope_enumeration_side_channel() -> None:
+    hidden = client.get("/v1/resources/optic-b-01", headers={"X-AskLily-Role": "operator"})
+    unknown = client.get("/v1/resources/not-a-fixture-resource", headers={"X-AskLily-Role": "operator"})
+    assert (hidden.status_code, hidden.json()["detail"]["code"]) == (404, "resource_not_available")
+    assert (unknown.status_code, unknown.json()["detail"]["code"]) == (404, "resource_not_available")
+
+    suggestions = client.get(
+        "/v1/resources/suggestions", params={"query": "leaf-b01"}, headers={"X-AskLily-Role": "operator"}
+    )
+    assert suggestions.status_code == 200
+    assert suggestions.json()["suggestions"] == []
+
+    detail = client.get("/v1/resources/optic-a-02", headers={"X-AskLily-Role": "operator"})
+    assert detail.status_code == 200
+    value = detail.json()["detail"]
+    assert value["resource"]["parent_resource_id"] == "interface-a01-e1-2"
+    assert value["resource"]["health"] == {
+        "health": "critical", "reason_codes": ["rx_power_low"], "rule_version": "demo-1.0.0"
+    }
+    assert {item["resource_id"] for item in value["related"]} == {"site-a", "leaf-a01", "interface-a01-e1-2"}
+
+
+def test_resource_registry_routes_and_registered_views_fail_closed() -> None:
+    catalog = client.get("/v1/capability-catalog", headers={"X-AskLily-Role": "operator"})
+    entry = next(item for item in catalog.json()["catalog"]["capabilities"] if item["capability_id"] == "resource-explorer")
+    assert entry["status"] == {"code": "ready", "reason_code": None}
+    assert entry["next_actions"] == [{"kind": "chat", "question": "检索当前可见资源"}]
+
+    wrong_filter = client.post(
+        "/v1/views/context",
+        json={"view_id": "resource_search", "scope": {"project_id": "demo-project"}, "filters": {"source": "fixture"}},
+    )
+    assert wrong_filter.status_code == 403
+    assert wrong_filter.json()["detail"]["code"] == "view_filter_not_allowed"
+    wrong_module = main.REGISTRY.validate_presentation_modules
+    try:
+        wrong_module("resource_search", ("resource-detail-overview",))
+    except Exception as exc:
+        assert str(exc) == "workspace_module_not_allowed"
+    else:
+        raise AssertionError("unregistered resource search module must fail closed")
+
+
+def test_resource_source_never_falls_back_and_runtime_disable_is_enforced(tmp_path, monkeypatch) -> None:
+    store = LocalIdentityStore(tmp_path / "runtime.sqlite3")
+    store.set_capability_enabled("resource-explorer", False, "test-admin")
+    monkeypatch.setattr(main, "LOCAL_IDENTITIES", store)
+    disabled = TestClient(main.app).get("/v1/resources")
+    assert disabled.status_code == 409
+    assert disabled.json()["detail"]["code"] == "capability_disabled"
+
+    monkeypatch.setattr(main, "LOCAL_IDENTITIES", LocalIdentityStore(tmp_path / "missing.sqlite3"))
+    monkeypatch.setattr(main, "RUNTIME_CONFIG", RuntimeConfig("1.0.0", "production", ()))
+    missing = TestClient(main.app).get("/v1/resources")
+    assert missing.status_code == 503
+    assert missing.json()["detail"]["code"] == "data_source_not_configured"
+
+
 def test_optic_view_context_rejects_scope_expansion() -> None:
     response = client.post(
         "/v1/views/context",
